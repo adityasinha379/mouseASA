@@ -1,1 +1,4 @@
+ckpt_models
+data
 scripts/ipynb_checkpoints
+scripts/logs/*
