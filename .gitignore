@@ -1,4 +1,5 @@
 ckpt_models
 data
-scripts/ipynb_checkpoints
+scripts/.ipynb_checkpoints
 scripts/logs/*
+scripts/__pycache__

@@ -194,7 +194,7 @@ if __name__ == "__main__":
     use_prior = np.int(sys.argv[7])
     gc = ''
     ident = '_vi'
-    modelname = 'po'
+    modelname = 'm3'
 
     basedir = '/data/leslie/sinhaa2/mouseASA/'
     if use_prior:
@@ -215,7 +215,7 @@ if __name__ == "__main__":
 
     if modelname=='m3':
         loss_fcn = nn.MSELoss()
-    elif modelname=='po':
+    elif modelname=='po':           # still experimenting with this...
         loss_fcn = nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
