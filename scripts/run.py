@@ -22,7 +22,7 @@ def revcomp(x,y):
 
 
 def load_data(celltype, dataset, suff):
-    basedir = '/data/leslie/sinhaa2/mouseASA/'
+    basedir = '/data/leslie/shared/ASA/mouseASA/'
     datadir = basedir+'data/'+celltype+'/'
     with h5py.File(datadir+'data'+suff+'.h5','r') as f:
         if dataset=='both':
@@ -132,6 +132,7 @@ def test(data_loader, model):
             preds.append(model(input_seqs).detach().cpu().numpy())
     preds = np.concatenate(preds)
     preds = (preds[:len(preds)//2]+preds[len(preds)//2:])/2        # average of revcomp preds
+    preds = preds[:len(preds)//2]
     return preds
 
 def train_model(
@@ -196,7 +197,7 @@ if __name__ == "__main__":
     ident = '_vi'
     modelname = 'm3'
 
-    basedir = '/data/leslie/sinhaa2/mouseASA/'
+    basedir = '/data/leslie/shared/ASA/mouseASA/'
     if use_prior:
         print('fourier_prior')
     else:
@@ -239,8 +240,8 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
 
-    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=np.bool(use_prior) )
-    # model.load_state_dict(torch.load(SAVEPATH))
+    # model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=np.bool(use_prior) )
+    model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
@@ -248,4 +249,4 @@ if __name__ == "__main__":
     print(test_preds.shape)
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'preds_{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
+    np.save(predsdir+'preds_{}_{}_{}_{}{}{}_noavg.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
