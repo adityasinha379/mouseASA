@@ -300,7 +300,7 @@ class alleleScan(nn.Module):
 
         # Loss for positives
         if pos_grads.nelement():
-            pos_fft = torch.rfft(pos_grads, 1)
+            pos_fft = torch.fft.rfft(pos_grads, 1)
             pos_mags = torch.norm(pos_fft, dim=2)
             pos_mag_sum = torch.sum(pos_mags, dim=1, keepdim=True)
             pos_mag_sum[pos_mag_sum == 0] = 1  # Keep 0s when the sum is 0

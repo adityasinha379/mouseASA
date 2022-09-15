@@ -38,6 +38,13 @@ def load_data(celltype, dataset, suff):
             xVa = np.vstack((f['x_val_b6'][()], f['x_val_unegs'][()]))
             yVa = np.concatenate((f['y_val_b6'][()], f['y_val_unegs'][()]))
             xTe = np.vstack((f['x_test_b6'][()],f['x_test_cast'][()]))
+            yTe = np.concatenate((f['y_test_b6'][()],f['y_test_cast'][()]))    
+        elif dataset=='ca':
+            xTr = np.vstack((f['x_train_cast'][()], f['x_train_unegs'][()]))
+            yTr = np.concatenate((f['y_train_cast'][()], f['y_train_unegs'][()]))
+            xVa = np.vstack((f['x_val_cast'][()], f['x_val_unegs'][()]))
+            yVa = np.concatenate((f['y_val_cast'][()], f['y_val_unegs'][()]))
+            xTe = np.vstack((f['x_test_b6'][()],f['x_test_cast'][()]))
             yTe = np.concatenate((f['y_test_b6'][()],f['y_test_cast'][()]))
         xTr, yTr = revcomp(xTr, yTr)
         xVa, yVa = revcomp(xVa, yVa)
@@ -59,7 +66,37 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return self.x[index].astype(np.float32), self.y[index].astype(np.float32)
 
-def train(data_loader, model, optimizer, epoch_i, num_epochs, loss_fcn, use_prior=False):
+def validate(data_loader, model, loss_fcn):
+    model.eval()  # Switch to evaluation mode
+#     torch.set_grad_enabled(False)
+    losses = []
+
+    for input_seqs, output_vals in data_loader:
+        input_seqs = input_seqs.to(DEVICE)
+        output_vals = output_vals.to(DEVICE)
+
+        logit_pred_vals = model(input_seqs)
+        loss = loss_fcn(logit_pred_vals, output_vals)
+
+#         pred_vals.append(
+#             logit_pred_vals.detach().cpu().numpy()
+#         )
+        losses.append(loss.item())
+    return model, losses#, np.concatenate(true_vals), np.concatenate(pred_vals)
+
+def test(data_loader, model):
+    model.eval()
+    with torch.no_grad():
+        preds = []
+        for input_seqs,_ in data_loader:
+            input_seqs = input_seqs.to(DEVICE)
+            preds.append(model(input_seqs).detach().cpu().numpy())
+    preds = np.concatenate(preds)
+    preds = (preds[:len(preds)//2]+preds[len(preds)//2:])/2        # average of revcomp preds
+    # preds = preds[:len(preds)//2]
+    return preds
+
+def train(data_loader, model, optimizer, loss_fcn, use_prior):
     
     model.train()  # Switch to training mode
 #     torch.set_grad_enabled(True)
@@ -105,39 +142,7 @@ def train(data_loader, model, optimizer, epoch_i, num_epochs, loss_fcn, use_prio
 
     return model, optimizer, losses
 
-def validate(data_loader, model, loss_fcn):
-    model.eval()  # Switch to evaluation mode
-#     torch.set_grad_enabled(False)
-    losses = []
-
-    for input_seqs, output_vals in data_loader:
-        input_seqs = input_seqs.to(DEVICE)
-        output_vals = output_vals.to(DEVICE)
-
-        logit_pred_vals = model(input_seqs)
-        loss = loss_fcn(logit_pred_vals, output_vals)
-
-#         pred_vals.append(
-#             logit_pred_vals.detach().cpu().numpy()
-#         )
-        losses.append(loss.item())
-    return model, losses#, np.concatenate(true_vals), np.concatenate(pred_vals)
-
-def test(data_loader, model):
-    model.eval()
-    with torch.no_grad():
-        preds = []
-        for input_seqs,_ in data_loader:
-            input_seqs = input_seqs.to(DEVICE)
-            preds.append(model(input_seqs).detach().cpu().numpy())
-    preds = np.concatenate(preds)
-    preds = (preds[:len(preds)//2]+preds[len(preds)//2:])/2        # average of revcomp preds
-    preds = preds[:len(preds)//2]
-    return preds
-
-def train_model(
-    model, train_loader, valid_loader, num_epochs, optimizer, loss_fcn, SAVEPATH, patience, use_scheduler, use_prior=False
-):
+def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_fcn, SAVEPATH, patience, use_scheduler, use_prior):
     """
     Trains the model for the given number of epochs.
     """
@@ -147,7 +152,7 @@ def train_model(
     counter = 0
     for epoch_i in range(num_epochs):
         counter += 1
-        model, optimizer, losses = train(train_loader, model, optimizer, epoch_i, num_epochs, loss_fcn, use_prior)
+        model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior)
         train_loss_mean = np.mean(losses)
         train_losses.append(train_loss_mean)
         
@@ -193,6 +198,7 @@ if __name__ == "__main__":
     dropout = np.float(sys.argv[5]) #0.2
     n_ensemble = np.int(sys.argv[6]) #3
     use_prior = np.int(sys.argv[7])
+    # weight = np.float(sys.argv[8])
     gc = ''
     ident = '_vi'
     modelname = 'm3'
@@ -202,7 +208,6 @@ if __name__ == "__main__":
         print('fourier_prior')
     else:
         print('no prior')
-    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
 
     #fourier param
     freq_limit = 150
@@ -220,7 +225,7 @@ if __name__ == "__main__":
         loss_fcn = nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
-    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident)
+    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident+'')
 
     ## define the data loaders
     train_dataset = Dataset(x_train, y_train)
@@ -239,9 +244,11 @@ if __name__ == "__main__":
                             batch_size=BATCH_SIZE, 
                             shuffle=False,
                         num_workers = 1)
+    
+    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
 
-    # model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=np.bool(use_prior) )
-    model.load_state_dict(torch.load(SAVEPATH))
+    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=np.bool(use_prior) )
+    # model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
@@ -249,4 +256,4 @@ if __name__ == "__main__":
     print(test_preds.shape)
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'preds_{}_{}_{}_{}{}{}_noavg.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
+    np.save(predsdir+'preds_{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)

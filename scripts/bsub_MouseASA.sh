@@ -14,16 +14,18 @@ dropout='0.2'
 n_ensemble=3
 
 # Run Model 3.0
+# for weight in {0.2,0.5,0.8,1.0,1.5,2.0,4.0}
+# do
 for use_prior in 1 # {0,1}
 do
-    for dataset in {'b6','both'}
+    for dataset in 'ca' # {'b6','both'}
     do
         for BATCH_SIZE in 32
         do
             rm -rf logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out
-            bsub -J ${celltype}.${dataset}.${use_prior}.${BATCH_SIZE} -n 10 -R "A100" -W 3:00 -sla llSC2 -q gpuqueue -gpu "num=1" -o logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out -eo logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out "/data/leslie/sinhaa2/mouseASA/scripts/run_m3.sh $dataset $BATCH_SIZE $celltype $poolsize $dropout $n_ensemble $use_prior"
+            bsub -J ${celltype}.${dataset}.${use_prior}.${BATCH_SIZE} -n 10 -R "A100" -W 5:00 -sla llSC2 -q gpuqueue -gpu "num=1" -o logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out -eo logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out "/data/leslie/sinhaa2/mouseASA/scripts/run_m3.sh $dataset $BATCH_SIZE $celltype $poolsize $dropout $n_ensemble $use_prior"
         done
         echo "${celltype}.${dataset}.${use_prior}.${BATCH_SIZE}"
     done
 done
-
+# done

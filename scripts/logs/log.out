@@ -1,13 +1,13 @@
-Sender: LSF System <lsfadmin@lt04>
-Subject: Job 8551320: <MouseASA_test> in cluster <lila> Done
+Sender: LSF System <lsfadmin@lt05>
+Subject: Job 9250260: <MouseASA_test> in cluster <lila> Done
 
-Job <MouseASA_test> was submitted from host <lilac-ln02> by user <sinhaa2> in cluster <lila> at Thu Aug  4 14:51:46 2022
-Job was executed on host(s) <lt04>, in queue <cpuqueue>, as user <sinhaa2> in cluster <lila> at Thu Aug  4 14:51:46 2022
+Job <MouseASA_test> was submitted from host <lilac-ln02> by user <sinhaa2> in cluster <lila> at Mon Sep 12 13:28:43 2022
+Job was executed on host(s) <lt05>, in queue <cpuqueue>, as user <sinhaa2> in cluster <lila> at Mon Sep 12 13:28:44 2022
 </home/sinhaa2> was used as the home directory.
 </data/leslie/sinhaa2/mouseASA/scripts> was used as the working directory.
-Started at Thu Aug  4 14:51:46 2022
-Terminated at Thu Aug  4 14:51:47 2022
-Results reported at Thu Aug  4 14:51:47 2022
+Started at Mon Sep 12 13:28:44 2022
+Terminated at Mon Sep 12 13:28:44 2022
+Results reported at Mon Sep 12 13:28:44 2022
 
 Your job looked like:
 
@@ -29,19 +29,21 @@ dropout='0.2'
 n_ensemble=3
 
 # Run Model 3.0
+# for weight in {0.2,0.5,0.8,1.0,1.5,2.0,4.0}
+# do
 for use_prior in 1 # {0,1}
 do
-    for dataset in {'b6','both'}
+    for dataset in 'ca' # {'b6','both'}
     do
         for BATCH_SIZE in 32
         do
             rm -rf logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out
-            bsub -J ${celltype}.${dataset}.${use_prior}.${BATCH_SIZE} -n 10 -R "A100" -W 3:00 -sla llSC2 -q gpuqueue -gpu "num=1" -o logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out -eo logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out "/data/leslie/sinhaa2/mouseASA/scripts/run_m3.sh $dataset $BATCH_SIZE $celltype $poolsize $dropout $n_ensemble $use_prior"
+            bsub -J ${celltype}.${dataset}.${use_prior}.${BATCH_SIZE} -n 10 -R "A100" -W 5:00 -sla llSC2 -q gpuqueue -gpu "num=1" -o logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out -eo logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out "/data/leslie/sinhaa2/mouseASA/scripts/run_m3.sh $dataset $BATCH_SIZE $celltype $poolsize $dropout $n_ensemble $use_prior"
         done
         echo "${celltype}.${dataset}.${use_prior}.${BATCH_SIZE}"
     done
 done
-
+# done
 
 ------------------------------------------------------------
 
@@ -49,20 +51,18 @@ Successfully completed.
 
 Resource usage summary:
 
-    CPU time :                                   0.17 sec.
+    CPU time :                                   0.12 sec.
     Max Memory :                                 -
     Average Memory :                             -
     Total Requested Memory :                     1.00 GB
     Delta Memory :                               -
     Max Swap :                                   -
-    Max Processes :                              5
-    Max Threads :                                6
-    Run time :                                   2 sec.
+    Max Processes :                              -
+    Max Threads :                                -
+    Run time :                                   1 sec.
     Turnaround time :                            1 sec.
 
 The output (if any) follows:
 
-Job <8551321> is submitted to queue <gpuqueue>.
-cd8.b6.1.32
-Job <8551322> is submitted to queue <gpuqueue>.
-cd8.both.1.32
+Job <9250261> is submitted to queue <gpuqueue>.
+cd8.ca.1.32
