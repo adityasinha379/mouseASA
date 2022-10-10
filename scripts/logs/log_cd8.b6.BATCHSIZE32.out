@@ -1,13 +1,13 @@
-Sender: LSF System <lsfadmin@ll08>
-Subject: Job 9250133: <cd8.b6.1.32> in cluster <lila> Done
+Sender: LSF System <lsfadmin@ll05>
+Subject: Job 9931971: <cd8.b6.1.32> in cluster <lila> Done
 
-Job <cd8.b6.1.32> was submitted from host <lt14> by user <sinhaa2> in cluster <lila> at Mon Sep 12 13:20:28 2022
-Job was executed on host(s) <10*ll08>, in queue <gpuqueue>, as user <sinhaa2> in cluster <lila> at Mon Sep 12 13:20:29 2022
+Job <cd8.b6.1.32> was submitted from host <lt12> by user <sinhaa2> in cluster <lila> at Wed Oct  5 11:12:58 2022
+Job was executed on host(s) <10*ll05>, in queue <gpuqueue>, as user <sinhaa2> in cluster <lila> at Wed Oct  5 11:13:00 2022
 </home/sinhaa2> was used as the home directory.
 </data/leslie/sinhaa2/mouseASA/scripts> was used as the working directory.
-Started at Mon Sep 12 13:20:29 2022
-Terminated at Mon Sep 12 14:29:49 2022
-Results reported at Mon Sep 12 14:29:49 2022
+Started at Wed Oct  5 11:13:00 2022
+Terminated at Wed Oct  5 12:10:22 2022
+Results reported at Wed Oct  5 12:10:22 2022
 
 Your job looked like:
 
@@ -20,7 +20,7 @@ Successfully completed.
 
 Resource usage summary:
 
-    CPU time :                                   4744.00 sec.
+    CPU time :                                   3924.00 sec.
     Max Memory :                                 5 GB
     Average Memory :                             4.02 GB
     Total Requested Memory :                     20.00 GB
@@ -28,60 +28,44 @@ Resource usage summary:
     Max Swap :                                   -
     Max Processes :                              5
     Max Threads :                                140
-    Run time :                                   4159 sec.
-    Turnaround time :                            4161 sec.
+    Run time :                                   3443 sec.
+    Turnaround time :                            3444 sec.
 
 The output (if any) follows:
 
 cuda
 fourier_prior
 ++++ Val loss improved from 10000000000.0, saving+++++
-13:22:30 --- Epoch: 0	Train loss: 6.3185	Valid loss: 6.9358	
-++++ Val loss improved from 6.935837608773679, saving+++++
-13:24:24 --- Epoch: 1	Train loss: 5.1543	Valid loss: 4.7630	
-13:26:19 --- Epoch: 2	Train loss: 4.7496	Valid loss: 5.5854	
-++++ Val loss improved from 4.7629758455013835, saving+++++
-13:28:15 --- Epoch: 3	Train loss: 4.4998	Valid loss: 4.2365	
-++++ Val loss improved from 4.236529878375441, saving+++++
-13:30:11 --- Epoch: 4	Train loss: 4.2949	Valid loss: 4.2357	
-13:32:06 --- Epoch: 5	Train loss: 4.1581	Valid loss: 4.4291	
-++++ Val loss improved from 4.235680072634052, saving+++++
-13:34:01 --- Epoch: 6	Train loss: 4.0364	Valid loss: 3.9739	
-13:35:56 --- Epoch: 7	Train loss: 3.9539	Valid loss: 4.2532	
-13:37:49 --- Epoch: 8	Train loss: 3.8795	Valid loss: 4.1191	
-++++ Val loss improved from 3.9738536614971043, saving+++++
-13:39:45 --- Epoch: 9	Train loss: 3.8199	Valid loss: 3.9360	
-++++ Val loss improved from 3.9359551631687095, saving+++++
-13:41:42 --- Epoch: 10	Train loss: 3.7763	Valid loss: 3.8552	
-13:43:38 --- Epoch: 11	Train loss: 3.7215	Valid loss: 3.9402	
-++++ Val loss improved from 3.8551863418636976, saving+++++
-13:45:33 --- Epoch: 12	Train loss: 3.6817	Valid loss: 3.8363	
-13:47:29 --- Epoch: 13	Train loss: 3.6276	Valid loss: 3.8559	
-13:49:24 --- Epoch: 14	Train loss: 3.5975	Valid loss: 5.1759	
-++++ Val loss improved from 3.83627842147197, saving+++++
-13:51:20 --- Epoch: 15	Train loss: 3.6007	Valid loss: 3.7689	
-13:53:16 --- Epoch: 16	Train loss: 3.5571	Valid loss: 3.8320	
-13:55:11 --- Epoch: 17	Train loss: 3.5413	Valid loss: 3.9166	
-13:57:05 --- Epoch: 18	Train loss: 3.5113	Valid loss: 3.8735	
-13:58:59 --- Epoch: 19	Train loss: 3.4690	Valid loss: 3.9978	
-14:00:53 --- Epoch: 20	Train loss: 3.4502	Valid loss: 3.7703	
-++++ Val loss improved from 3.7688987607414606, saving+++++
-14:02:47 --- Epoch: 21	Train loss: 3.4497	Valid loss: 3.7567	
-14:04:43 --- Epoch: 22	Train loss: 3.4477	Valid loss: 3.7779	
-++++ Val loss improved from 3.756735151386298, saving+++++
-14:06:38 --- Epoch: 23	Train loss: 3.4179	Valid loss: 3.7362	
-14:08:32 --- Epoch: 24	Train loss: 3.4070	Valid loss: 3.7942	
-++++ Val loss improved from 3.736156979595075, saving+++++
-14:10:26 --- Epoch: 25	Train loss: 3.3822	Valid loss: 3.7294	
-14:12:24 --- Epoch: 26	Train loss: 3.3632	Valid loss: 3.7756	
-14:14:19 --- Epoch: 27	Train loss: 3.3587	Valid loss: 4.0393	
-14:16:14 --- Epoch: 28	Train loss: 3.3545	Valid loss: 3.7688	
-14:18:10 --- Epoch: 29	Train loss: 3.3415	Valid loss: 3.8321	
-14:20:05 --- Epoch: 30	Train loss: 3.3383	Valid loss: 3.7894	
-14:22:02 --- Epoch: 31	Train loss: 3.3149	Valid loss: 3.9397	
-14:23:58 --- Epoch: 32	Train loss: 3.3081	Valid loss: 4.0458	
-14:25:53 --- Epoch: 33	Train loss: 3.3045	Valid loss: 3.7458	
-14:27:49 --- Epoch: 34	Train loss: 3.2842	Valid loss: 4.0636	
-14:29:44 --- Epoch: 35	Train loss: 3.2669	Valid loss: 3.8113	
+11:15:46 --- Epoch: 0	Train loss: 4.7747	Valid loss: 5.5564	
+++++ Val loss improved from 5.556427532037975, saving+++++
+11:18:13 --- Epoch: 1	Train loss: 3.5594	Valid loss: 3.3211	
+++++ Val loss improved from 3.3211069497824703, saving+++++
+11:20:41 --- Epoch: 2	Train loss: 3.1124	Valid loss: 2.7548	
+++++ Val loss improved from 2.754795020670317, saving+++++
+11:23:11 --- Epoch: 3	Train loss: 2.9202	Valid loss: 2.6269	
+11:25:41 --- Epoch: 4	Train loss: 2.7367	Valid loss: 2.7094	
+11:28:10 --- Epoch: 5	Train loss: 2.6361	Valid loss: 2.6807	
+++++ Val loss improved from 2.6268760166845877, saving+++++
+11:30:39 --- Epoch: 6	Train loss: 2.5468	Valid loss: 2.5272	
+++++ Val loss improved from 2.5272187658767233, saving+++++
+11:33:09 --- Epoch: 7	Train loss: 2.4796	Valid loss: 2.3246	
+11:35:37 --- Epoch: 8	Train loss: 2.4161	Valid loss: 2.3925	
+++++ Val loss improved from 2.3246337989986685, saving+++++
+11:38:05 --- Epoch: 9	Train loss: 2.3680	Valid loss: 2.2639	
+++++ Val loss improved from 2.2638621978863642, saving+++++
+11:40:33 --- Epoch: 10	Train loss: 2.3315	Valid loss: 2.2340	
+11:43:01 --- Epoch: 11	Train loss: 2.2821	Valid loss: 2.3696	
+++++ Val loss improved from 2.2340015401422235, saving+++++
+11:45:31 --- Epoch: 12	Train loss: 2.2658	Valid loss: 2.1704	
+11:48:00 --- Epoch: 13	Train loss: 2.2237	Valid loss: 2.1975	
+11:50:30 --- Epoch: 14	Train loss: 2.2071	Valid loss: 2.2357	
+11:52:59 --- Epoch: 15	Train loss: 2.1937	Valid loss: 2.5718	
+11:55:27 --- Epoch: 16	Train loss: 2.1691	Valid loss: 2.3595	
+11:57:55 --- Epoch: 17	Train loss: 2.1546	Valid loss: 2.3493	
+12:00:23 --- Epoch: 18	Train loss: 2.1313	Valid loss: 2.2071	
+12:02:50 --- Epoch: 19	Train loss: 2.1095	Valid loss: 2.3497	
+12:05:17 --- Epoch: 20	Train loss: 2.0951	Valid loss: 2.2590	
+12:07:47 --- Epoch: 21	Train loss: 2.0935	Valid loss: 2.3198	
+12:10:17 --- Epoch: 22	Train loss: 2.0808	Valid loss: 2.2018	
 Val loss did not improve for 10 epochs, early stopping...
 (7274,)

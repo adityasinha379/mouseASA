@@ -1,13 +1,13 @@
-Sender: LSF System <lsfadmin@lt05>
-Subject: Job 9250260: <MouseASA_test> in cluster <lila> Done
+Sender: LSF System <lsfadmin@lt12>
+Subject: Job 9931969: <MouseASA_test> in cluster <lila> Done
 
-Job <MouseASA_test> was submitted from host <lilac-ln02> by user <sinhaa2> in cluster <lila> at Mon Sep 12 13:28:43 2022
-Job was executed on host(s) <lt05>, in queue <cpuqueue>, as user <sinhaa2> in cluster <lila> at Mon Sep 12 13:28:44 2022
+Job <MouseASA_test> was submitted from host <lilac-ln02> by user <sinhaa2> in cluster <lila> at Wed Oct  5 11:12:57 2022
+Job was executed on host(s) <lt12>, in queue <cpuqueue>, as user <sinhaa2> in cluster <lila> at Wed Oct  5 11:12:58 2022
 </home/sinhaa2> was used as the home directory.
 </data/leslie/sinhaa2/mouseASA/scripts> was used as the working directory.
-Started at Mon Sep 12 13:28:44 2022
-Terminated at Mon Sep 12 13:28:44 2022
-Results reported at Mon Sep 12 13:28:44 2022
+Started at Wed Oct  5 11:12:58 2022
+Terminated at Wed Oct  5 11:12:59 2022
+Results reported at Wed Oct  5 11:12:59 2022
 
 Your job looked like:
 
@@ -33,7 +33,7 @@ n_ensemble=3
 # do
 for use_prior in 1 # {0,1}
 do
-    for dataset in 'ca' # {'b6','both'}
+    for dataset in {'b6','both'}
     do
         for BATCH_SIZE in 32
         do
@@ -51,18 +51,20 @@ Successfully completed.
 
 Resource usage summary:
 
-    CPU time :                                   0.12 sec.
+    CPU time :                                   0.18 sec.
     Max Memory :                                 -
     Average Memory :                             -
     Total Requested Memory :                     1.00 GB
     Delta Memory :                               -
     Max Swap :                                   -
-    Max Processes :                              -
-    Max Threads :                                -
-    Run time :                                   1 sec.
-    Turnaround time :                            1 sec.
+    Max Processes :                              4
+    Max Threads :                                6
+    Run time :                                   2 sec.
+    Turnaround time :                            2 sec.
 
 The output (if any) follows:
 
-Job <9250261> is submitted to queue <gpuqueue>.
-cd8.ca.1.32
+Job <9931971> is submitted to queue <gpuqueue>.
+cd8.b6.1.32
+Job <9931972> is submitted to queue <gpuqueue>.
+cd8.both.1.32

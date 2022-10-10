@@ -18,7 +18,7 @@ n_ensemble=3
 # do
 for use_prior in 1 # {0,1}
 do
-    for dataset in 'ca' # {'b6','both'}
+    for dataset in {'b6','both'}
     do
         for BATCH_SIZE in 32
         do

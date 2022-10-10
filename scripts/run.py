@@ -225,7 +225,7 @@ if __name__ == "__main__":
         loss_fcn = nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
-    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident+'')
+    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident+'_150bp')
 
     ## define the data loaders
     train_dataset = Dataset(x_train, y_train)
@@ -245,7 +245,7 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
+    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}_150bp.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
 
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=np.bool(use_prior) )
     # model.load_state_dict(torch.load(SAVEPATH))
@@ -256,4 +256,4 @@ if __name__ == "__main__":
     print(test_preds.shape)
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'preds_{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
+    np.save(predsdir+'preds_{}_{}_{}_{}{}{}_150bp.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
