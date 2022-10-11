@@ -30,22 +30,25 @@ def load_data(celltype, dataset, suff):
             yTr = np.concatenate((f['y_train_b6'][()], f['y_train_cast'][()], f['y_train_unegs'][()]))
             xVa = np.vstack((f['x_val_b6'][()], f['x_val_cast'][()], f['x_val_unegs'][()]))
             yVa = np.concatenate((f['y_val_b6'][()], f['y_val_cast'][()], f['y_val_unegs'][()]))
-            xTe = np.vstack((f['x_test_b6'][()],f['x_test_cast'][()]))
-            yTe = np.concatenate((f['y_test_b6'][()],f['y_test_cast'][()]))
+        elif dataset=='ref':
+            xTr = np.vstack((f['x_train_b6'][()], f['x_train_unegs'][()]))
+            yTr = np.concatenate((f['y_train_b6'][()] + f['y_train_cast'][()], f['y_train_unegs'][()]))
+            xVa = np.vstack((f['x_val_b6'][()], f['x_val_unegs'][()]))
+            yVa = np.concatenate((f['y_val_b6'][()] + f['y_val_cast'][()], f['y_val_unegs'][()]))
         elif dataset=='b6':
             xTr = np.vstack((f['x_train_b6'][()], f['x_train_unegs'][()]))
             yTr = np.concatenate((f['y_train_b6'][()], f['y_train_unegs'][()]))
             xVa = np.vstack((f['x_val_b6'][()], f['x_val_unegs'][()]))
             yVa = np.concatenate((f['y_val_b6'][()], f['y_val_unegs'][()]))
-            xTe = np.vstack((f['x_test_b6'][()],f['x_test_cast'][()]))
-            yTe = np.concatenate((f['y_test_b6'][()],f['y_test_cast'][()]))    
         elif dataset=='ca':
             xTr = np.vstack((f['x_train_cast'][()], f['x_train_unegs'][()]))
             yTr = np.concatenate((f['y_train_cast'][()], f['y_train_unegs'][()]))
             xVa = np.vstack((f['x_val_cast'][()], f['x_val_unegs'][()]))
             yVa = np.concatenate((f['y_val_cast'][()], f['y_val_unegs'][()]))
-            xTe = np.vstack((f['x_test_b6'][()],f['x_test_cast'][()]))
-            yTe = np.concatenate((f['y_test_b6'][()],f['y_test_cast'][()]))
+        # Test dataset remains same
+        xTe = np.vstack((f['x_test_b6'][()],f['x_test_cast'][()]))
+        yTe = np.concatenate((f['y_test_b6'][()],f['y_test_cast'][()]))
+        # Augment each dataset with revcomps, test for pred averaging
         xTr, yTr = revcomp(xTr, yTr)
         xVa, yVa = revcomp(xVa, yVa)
         xTe, yTe = revcomp(xTe, yTe)
@@ -200,7 +203,7 @@ if __name__ == "__main__":
     use_prior = np.int(sys.argv[7])
     # weight = np.float(sys.argv[8])
     gc = ''
-    ident = '_vi'
+    ident = '_vi_150bp'
     modelname = 'm3'
 
     basedir = '/data/leslie/shared/ASA/mouseASA/'
@@ -225,7 +228,7 @@ if __name__ == "__main__":
         loss_fcn = nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
-    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident+'_150bp')
+    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident)
 
     ## define the data loaders
     train_dataset = Dataset(x_train, y_train)
@@ -245,7 +248,7 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}_150bp.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
+    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
 
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=np.bool(use_prior) )
     # model.load_state_dict(torch.load(SAVEPATH))
@@ -256,4 +259,4 @@ if __name__ == "__main__":
     print(test_preds.shape)
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'preds_{}_{}_{}_{}{}{}_150bp.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
+    np.save(predsdir+'preds_{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
