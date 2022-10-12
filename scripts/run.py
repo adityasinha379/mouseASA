@@ -53,7 +53,7 @@ def load_data(celltype, dataset, suff):
         xVa, yVa = revcomp(xVa, yVa)
         xTe, yTe = revcomp(xTe, yTe)
 
-    return xTr, xTe, xVa, yTr, yTe, yVa
+    return xTr, xVa, xTe, yTr, yVa, yTe
     
 
 class Dataset(torch.utils.data.Dataset):
@@ -228,7 +228,7 @@ if __name__ == "__main__":
         loss_fcn = nn.PoissonNLLLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
-    x_train, x_test, x_valid, y_train, y_test, y_valid = load_data(celltype, dataset, gc+ident)
+    x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident)
 
     ## define the data loaders
     train_dataset = Dataset(x_train, y_train)
