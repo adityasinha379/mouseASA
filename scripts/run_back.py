@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from datetime import datetime
 import torch
 import torch.nn as nn
@@ -8,14 +7,16 @@ import sys
 import h5py
 from model import alleleScan, place_tensor, fourier_att_prior_loss
 import os
-from utils import revcomp_old, subsample_unegs
+from utils import revcomp_m3, subsample_unegs
 
 # check device
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+RANDOM_SEED = 0
 
 def load_data(celltype, dataset, ident, get_rc=True, frac=0.6):
     basedir = '/data/leslie/shared/ASA/mouseASA/'
-    datadir = basedir+'data/'+celltype+'/'
+    datadir = basedir+'/'+celltype+'/data/'
+    # alleleScan can train on all the datasets
     if dataset=='trueref' or dataset=='ref':
         with h5py.File(datadir+'data'+ident+'_'+dataset+'.h5','r') as f:
             uneg_idx = subsample_unegs([len(f['x_train_unegs'][()]), len(f['x_val_unegs'][()])], frac=frac)
@@ -47,9 +48,9 @@ def load_data(celltype, dataset, ident, get_rc=True, frac=0.6):
     
     # Augment each dataset with revcomps, test for pred averaging
     if get_rc:
-        xTr, yTr = revcomp_old(xTr, yTr)
-        xVa, yVa = revcomp_old(xVa, yVa)
-        xTe, yTe = revcomp_old(xTe, yTe)
+        xTr, yTr = revcomp_m3(xTr, yTr)
+        xVa, yVa = revcomp_m3(xVa, yVa)
+        xTe, yTe = revcomp_m3(xTe, yTe)
     return xTr, xVa, xTe, yTr, yVa, yTe
 
 class Dataset(torch.utils.data.Dataset):
@@ -67,7 +68,6 @@ class Dataset(torch.utils.data.Dataset):
 
 def validate(data_loader, model, loss_fcn):
     model.eval()  # Switch to evaluation mode
-#     torch.set_grad_enabled(False)
     losses = []
     for input_seqs, output_vals in data_loader:
         input_seqs = input_seqs.to(DEVICE)
@@ -87,7 +87,6 @@ def test(data_loader, model):
             preds.append(model(input_seqs).detach().cpu().numpy())
     preds = np.concatenate(preds)
     preds = (preds[:len(preds)//2]+preds[len(preds)//2:])/2        # average of revcomp preds
-    # preds = preds[:len(preds)//2]
     return preds
 
 def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
@@ -132,7 +131,7 @@ def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
 
     return model, optimizer, losses
 
-def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_fcn, SAVEPATH, patience, use_scheduler, use_prior, weight=1.0):
+def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_fcn, SAVEPATH, patience, use_prior, weight=1.0):
     """
     Trains the model for the given number of epochs.
     """
@@ -141,7 +140,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     valid_losses = []
     counter = 0
 
-    # torch.autograd.set_detect_anomaly(True)
+    # torch.autograd.set_detect_anomaly(True)     # for debugging purposes, really slow
     for epoch_i in range(num_epochs):
         counter += 1
         model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
@@ -183,53 +182,13 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
         if counter >= patience:
             print('Val loss did not improve for {} epochs, early stopping...'.format(patience))
             break
-        if use_scheduler:    
-            scheduler.step()
 
     return model, train_losses, valid_losses
 
-def get_weight_frac(num):
-    if num==0:
-        weight, frac = [1.0, 1.0]
-    elif num==1:
-        weight, frac = [1.0, 0.6]
-    elif num==2:
-        weight, frac = [1.0, 0.4]
-    elif num==3:
-        weight, frac = [0.3, 0.6]
-    elif num==4:
-        weight, frac = [0.7, 0.6]
-    elif num==5:
-        weight, frac = [1.5, 0.6]
-    elif num==6:
-        weight, frac = [1.5, 1.0]
-    elif num==7:
-        weight, frac = [2.0, 1.0]
-    elif num==8:
-        weight, frac = [2.0, 0.4]
-    elif num==9:
-        weight, frac = [0.3, 0.4]
-    return weight, frac
-
-def get_seed_frac(num):
-    if num==0:
-        seed, frac = [[0,0], 1.0]
-    elif num==1:
-        seed, frac = [[0,19], 1.0]
-    elif num==2:
-        seed, frac = [[0,0], 0.6]
-    elif num==3:
-        seed, frac = [[0,19], 0.6]
-    elif num==4:
-        seed, frac = [[19,0], 0.6]
-    return seed, frac
-
 
 if __name__ == "__main__":
-    print(DEVICE)
     initial_rate = 1e-3
     wd = 1e-3
-    RANDOM_SEED = 0
     N_EPOCHS = 100
     patience = 10
 
@@ -243,12 +202,6 @@ if __name__ == "__main__":
         weight = float(sys.argv[7])  # fourier loss weighting
     except:
         weight = 1.0
-    # weight = 1.0
-    # num = int(sys.argv[7])
-    # print(num)
-
-    # seed, frac = get_seed_frac(num)
-    # weight, frac = get_weight_frac(num)
 
     gc = ''
     ident = '_vi_150bp'
@@ -256,9 +209,8 @@ if __name__ == "__main__":
 
     basedir = '/data/leslie/shared/ASA/mouseASA/'
     if use_prior:
-        print('fourier_prior')
         #fourier param
-        freq_limit = 50
+        freq_limit = 50         # This should be seqlen//6 (seqlen is 300 for me)
         limit_softness = 0.2
         att_prior_grad_smooth_sigma = 3
     else:
@@ -267,17 +219,14 @@ if __name__ == "__main__":
 
     torch.manual_seed(RANDOM_SEED)
     torch.backends.cudnn.deterministic=True
-    np.random.seed(RANDOM_SEED)
-    model = alleleScan(poolsize, dropout)
+    if modelname=='m3':
+        model = alleleScan(poolsize, dropout)
     model.to(DEVICE)
 
-    if modelname=='m3':
-        loss_fcn = nn.MSELoss()
-    elif modelname=='po':           # still experimenting with this...
-        loss_fcn = nn.PoissonNLLLoss()
+    loss_fcn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
-    x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.6)
+    x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.6)  # NOTE: for valid comparison, uneg sampling fraction should be double for alleleScan
     
     ## define the data loaders
     train_dataset = Dataset(x_train, y_train)
@@ -297,17 +246,15 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    # SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
-    SAVEPATH = basedir+f'ckpt_models/cd8/test_both_m3.hdf5'
+    SAVEPATH = basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)    # model save path
     print(SAVEPATH)
-    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, False, use_prior=bool(use_prior), weight=weight)
-    model.load_state_dict(torch.load(SAVEPATH))
+    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
+    model.load_state_dict(torch.load(SAVEPATH))      # load best model (NOT last epoch)
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
-    predsdir = basedir+'data/'+celltype+'/preds/'
+    predsdir = basedir+f'{celltype}/preds/'
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    # np.save(predsdir+'{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
-    np.save(predsdir+f'test_both_m3.npy', test_preds)
+    np.save(predsdir+'{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)      # preds save path

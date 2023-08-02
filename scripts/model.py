@@ -6,16 +6,16 @@ import math
 import scipy.ndimage
 
 def place_tensor(tensor):
-    """
-    Places a tensor on GPU, if PyTorch sees CUDA; otherwise, the returned tensor
-    remains on CPU.
-    """
+    '''
+    Places a tensor on GPU if PyTorch sees CUDA, else returned tensor remains on CPU.
+    '''
     if torch.cuda.is_available():
         return tensor.cuda()
     return tensor
 
 def smooth_tensor_1d(input_tensor, smooth_sigma):
-    """
+    '''
+    For fourier prior
     Smooths an input tensor along a dimension using a Gaussian filter.
     Arguments:
         `input_tensor`: a A x B tensor to smooth along the second dimension
@@ -25,7 +25,7 @@ def smooth_tensor_1d(input_tensor, smooth_sigma):
             1 + (2 * sigma); sigma of 0 means no smoothing
     Returns an array the same shape as the input tensor, with the dimension of
     `B` smoothed.
-    """
+    '''
     # Generate the kernel
     if smooth_sigma == 0:
         sigma, truncate = 1, 0
@@ -46,210 +46,6 @@ def smooth_tensor_1d(input_tensor, smooth_sigma):
     )
 
     return torch.squeeze(smoothed, dim=1)
-
-class GELU(nn.Module):
-    """
-    Paper Section 3.4, last paragraph notice that BERT used the GELU instead of RELU
-    """
-
-    def forward(self, x):
-        return 0.5 * x * (1 + torch.tanh(math.sqrt(2 / math.pi) * (x + 0.044715 * torch.pow(x, 3))))
-
-class PositionwiseFeedForward(nn.Module):
-    "Implements FFN equation."
-
-    def __init__(self, d_model, d_ff, dropout=0.1):
-        super(PositionwiseFeedForward, self).__init__()
-        self.w_1 = nn.Linear(d_model, d_ff)
-        self.w_2 = nn.Linear(d_ff, d_model)
-        self.dropout = nn.Dropout(dropout)
-        self.activation = GELU()
-
-    def forward(self, x):
-        return self.w_2(self.dropout(self.activation(self.w_1(x))))
-
-class LayerNorm(nn.Module):
-    "Construct a layernorm module (See citation for details)."
-
-    def __init__(self, features, eps=1e-6):
-        super(LayerNorm, self).__init__()
-        self.a_2 = nn.Parameter(torch.ones(features))
-        self.b_2 = nn.Parameter(torch.zeros(features))
-        self.eps = eps
-
-    def forward(self, x):
-        mean = x.mean(-1, keepdim=True)
-        std = x.std(-1, keepdim=True)
-        return self.a_2 * (x - mean) / (std + self.eps) + self.b_2
-    
-class SublayerConnection(nn.Module):
-    """
-    A residual connection followed by a layer norm.
-    Note for code simplicity the norm is first as opposed to last.
-    """
-
-    def __init__(self, size, dropout):
-        super(SublayerConnection, self).__init__()
-        self.norm = LayerNorm(size)
-        self.dropout = nn.Dropout(dropout)
-
-    def forward(self, x, sublayer):
-        "Apply residual connection to any sublayer with the same size."
-        return x + self.dropout(sublayer(self.norm(x)))
-
-class Attention(nn.Module):
-    """
-    Compute 'Scaled Dot Product Attention
-    """
-
-    def forward(self, query, key, value, mask=None, dropout=None):
-        scores = torch.matmul(query, key.transpose(-2, -1)) \
-                 / math.sqrt(query.size(-1))
-
-        if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
-
-        p_attn = F.softmax(scores, dim=-1)
-
-        if dropout is not None:
-            p_attn = dropout(p_attn)
-
-        return torch.matmul(p_attn, value), p_attn
-
-class MultiHeadedAttention(nn.Module):
-    """
-    Take in model size and number of heads.
-    """
-
-    def __init__(self, h, d_model, dropout=0.1):
-        super().__init__()
-        assert d_model % h == 0
-
-        # We assume d_v always equals d_k
-        self.d_k = d_model // h
-        self.h = h
-
-        self.linear_layers = nn.ModuleList([nn.Linear(d_model, d_model) for _ in range(3)])
-        self.output_linear = nn.Linear(d_model, d_model)
-        self.attention = Attention()
-
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, query, key, value, mask=None):
-        batch_size = query.size(0)
-
-        # 1) Do all the linear projections in batch from d_model => h x d_k
-        query, key, value = [l(x).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
-                             for l, x in zip(self.linear_layers, (query, key, value))]
-
-        # 2) Apply attention on all the projected vectors in batch.
-        x, attn = self.attention(query, key, value, mask=mask, dropout=self.dropout)
-
-        # 3) "Concat" using a view and apply a final linear.
-        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
-
-        return self.output_linear(x)
-
-class TransformerBlock(nn.Module):
-    """
-    Bidirectional Encoder = Transformer (self-attention)
-    Transformer = MultiHead_Attention + Feed_Forward with sublayer connection
-    """
-
-    def __init__(self, hidden, attn_heads, feed_forward_hidden, dropout):
-        """
-        :param hidden: hidden size of transformer
-        :param attn_heads: head sizes of multi-head attention
-        :param feed_forward_hidden: feed_forward_hidden, usually 4*hidden_size
-        :param dropout: dropout rate
-        """
-
-        super().__init__()
-        self.attention = MultiHeadedAttention(h=attn_heads, d_model=hidden)
-        self.feed_forward = PositionwiseFeedForward(d_model=hidden, d_ff=feed_forward_hidden, dropout=dropout)
-        self.input_sublayer = SublayerConnection(size=hidden, dropout=dropout)
-        self.output_sublayer = SublayerConnection(size=hidden, dropout=dropout)
-        self.dropout = nn.Dropout(p=dropout)
-
-    def forward(self, x, mask):
-        x = self.input_sublayer(x, lambda _x: self.attention.forward(_x, _x, _x, mask=mask))
-        x = self.output_sublayer(x, self.feed_forward)
-        return self.dropout(x)
-
-class resblock(nn.Module):
-    def __init__(self,ni):
-        super(resblock, self).__init__()
-        self.blocks = nn.Sequential(
-            nn.Conv1d(ni, ni, 3, 1, 1),
-            nn.BatchNorm1d(ni),
-            nn.ReLU(),
-            nn.Conv1d(ni, ni, 1, 1, 0),
-            nn.BatchNorm1d(ni),
-            nn.ReLU(),
-        )
-
-    def forward(self,x):
-        residual = x
-        out = self.blocks(x)
-        out += residual
-        return out
-
-class alleleScan(nn.Module):
-
-    def __init__(self, poolsize, dropout):
-        super(alleleScan, self).__init__()
-        self.poolsize = poolsize
-        self.dropout = dropout
-        n = 32
-        n2 = 16
-        hidden=n
-        n_layers=4
-        attn_heads=4
-        
-        self.seq_extractor = nn.Sequential(
-            nn.Conv1d(in_channels = 4, out_channels = n2, kernel_size = 15, stride = 1, dilation = 1, padding = 7),
-            nn.BatchNorm1d(n2,eps=1e-3),
-            nn.ReLU(),
-            
-            nn.Conv1d(in_channels = n2, out_channels = n, kernel_size = 11, stride = 1, dilation = 1, padding = 5),
-            nn.BatchNorm1d(n,eps=1e-3),
-            nn.ReLU())
-        
-        self.transformer_blocks = nn.ModuleList(
-            [TransformerBlock(hidden, attn_heads, hidden * 4, dropout) for _ in range(n_layers)])
-
-        self.seq_extractor_2 = nn.Sequential(
-            nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 2),
-            nn.BatchNorm1d(n2,eps=1e-3),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size = self.poolsize),  
-
-            nn.Conv1d(in_channels = n2, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 2),
-            nn.BatchNorm1d(n2,eps=1e-3),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size = self.poolsize))
-        
-        self.dense = nn.Sequential(
-            nn.Linear(in_features=(1200), out_features=300),
-            nn.BatchNorm1d(300,eps=1e-3),
-            nn.ReLU(),
-            nn.Linear(in_features=(300), out_features=1))
-
-    def forward(self, x):
-        x = self.seq_extractor(x)
-        x = x.permute(0,2,1)
-        for transformer in self.transformer_blocks:
-            x = transformer.forward(x, None)
-        x = x.permute(0,2,1)
-        x = self.seq_extractor_2(x)
-        x = torch.flatten(x,1)
-        x = self.dense(x)
-        x = torch.flatten(x)
-        return x
-
-def fc_loss(output, target, conf_weights=1.):
-    loss = torch.mean(conf_weights*(output-target)**2)
-    return loss
 
 def fourier_att_prior_loss(status, input_grads, freq_limit, limit_softness, att_prior_grad_smooth_sigma):
     """
@@ -305,38 +101,16 @@ def fourier_att_prior_loss(status, input_grads, freq_limit, limit_softness, att_
     else:
         return place_tensor(torch.zeros(1))
 
-class fcblock(nn.Module):
-    def __init__(self, n):
-        super(fcblock, self).__init__()
-        self.dense1 = nn.Sequential(
-            nn.Linear(in_features=(1200), out_features=n),
-            nn.BatchNorm1d(n,eps=1e-3),
-            nn.ReLU())
-        self.dense2 = nn.Sequential(
-            nn.Linear(in_features=(1200), out_features=n),
-            nn.BatchNorm1d(n,eps=1e-3),
-            nn.ReLU())
-        self.final = nn.Sequential(
-            nn.Linear(in_features=(2*n), out_features=n//2),
-            nn.Linear(in_features=(n//2), out_features=1))
 
-    def forward(self,x1,x2):
-        x1 = self.dense1(x1)
-        x2 = self.dense2(x2)
-        x = torch.cat([x1,x2], dim=1)
-        out = torch.flatten( self.final(x) )
-        return out
-
-class pairScan(nn.Module):
-    def __init__(self, poolsize, dropout, fc_train=True):
-        super(pairScan, self).__init__()
-        self.poolsize = poolsize
+class alleleScan(nn.Module):
+    # Indiscriminate architecture
+    def __init__(self, poolsize, dropout):
+        super(alleleScan, self).__init__()
+        self.poolsize = poolsize        # for max pooling at the end
         self.dropout = dropout
-        self.fc_train = fc_train
         n = 32
         n2 = 16
-        hidden=n
-        n_layers=4
+        n_layers=2
         attn_heads=4
         
         self.seq_extractor = nn.Sequential(
@@ -348,9 +122,8 @@ class pairScan(nn.Module):
             nn.BatchNorm1d(n,eps=1e-3),
             nn.ReLU())
         
-        self.transformer_blocks = nn.ModuleList(
-            [TransformerBlock(hidden, attn_heads, hidden * 4, dropout) for _ in range(n_layers)])
-        
+        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
+
         self.seq_extractor_2 = nn.Sequential(
             nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 2),
             nn.BatchNorm1d(n2,eps=1e-3),
@@ -367,24 +140,121 @@ class pairScan(nn.Module):
             nn.BatchNorm1d(300,eps=1e-3),
             nn.ReLU(),
             nn.Linear(in_features=(300), out_features=1))
+
+    def forward(self, x):     # (B, 4, 300)
+        x = self.seq_extractor(x)
+        x = x.permute(0,2,1)   # reshape to make it (n, seq, feat) as required by transformer
+        x = self.transformer_blocks(x)
+        x = x.permute(0,2,1)   # reshape back
+        x = self.seq_extractor_2(x)
+        x = torch.flatten(x,1)
+        x = self.dense(x)
+        x = torch.flatten(x)
+        return x
+
+
+def fc_loss(output, target, conf_weights=1.):\
+    # MSE weighted by confidence weights of fold change. If not provided, defaults to standard MSE
+    loss = torch.mean(conf_weights*(output-target)**2)
+    return loss
+
+class fcblock(nn.Module):
+    '''
+    Fold change head of pairScan, currently under experimentation
+    Seems useless as of now as the predictions from this head are very bad compared to ground truth fold change
+    '''
+    def __init__(self,n):
+        super(fcblock, self).__init__()
+        # self.dense1 = nn.Sequential(
+        #     nn.Linear(in_features=(1200), out_features=n),
+        #     nn.BatchNorm1d(n,eps=1e-3),
+        #     nn.ReLU())
+        # self.dense2 = nn.Sequential(
+        #     nn.Linear(in_features=(1200), out_features=n),
+        #     nn.BatchNorm1d(n,eps=1e-3),
+        #     nn.ReLU())
+        self.final = nn.Sequential(
+            # nn.Linear(in_features=(2*n), out_features=100),
+            nn.Linear(in_features=(n), out_features=1))
+
+    def forward(self,x1,x2):
+        # x1 = self.dense1(x1)
+        # x2 = self.dense2(x2)
+        # x = torch.cat([x1,x2], dim=1)
+        x = x2-x1              # Subtracting representations of b6 and cast
+        out = torch.flatten( self.final(x) )
+        return out
+
+class pairScan(nn.Module):
+    '''
+    Siamese architecture - Paired training
+    As you can see, I've been doing some playing around with the model,
+    so this is by no means a gold-standard and you are encouraged to do the same
+    '''
+    def __init__(self, poolsize, dropout, fc_train=True):
+        super(pairScan, self).__init__()
+        self.poolsize = poolsize
+        self.dropout = dropout
+        self.fc_train = fc_train     # whether to use fold change head or not
+        n = 32
+        n2 = 16
+        n3 = 8
+        n_layers=2
+        attn_heads=4
+        
+        self.seq_extractor = nn.Sequential(
+            nn.Conv1d(in_channels = 4, out_channels = n2, kernel_size = 15, stride = 1, dilation = 1, padding = 'same'),
+            nn.BatchNorm1d(n2,eps=1e-3),
+            nn.ReLU(),
+            
+            nn.Conv1d(in_channels = n2, out_channels = n, kernel_size = 11, stride = 1, dilation = 1, padding = 'same'),
+            nn.BatchNorm1d(n,eps=1e-3),
+            nn.ReLU())#,
+            
+            # nn.Conv1d(in_channels = n, out_channels = n, kernel_size = 11, stride = 1, dilation = 4, padding = 'same'),
+            # nn.BatchNorm1d(n,eps=1e-3),
+            # nn.ReLU(),
+            
+            # nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 11, stride = 1, dilation = 8, padding = 'same'),
+            # nn.BatchNorm1d(n2,eps=1e-3),
+            # nn.ReLU())
+        
+        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
+        
+        self.seq_extractor_2 = nn.Sequential(
+            nn.Conv1d(in_channels = n, out_channels = n3, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
+            nn.BatchNorm1d(n3,eps=1e-3),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size = self.poolsize))#,
+
+            # nn.Conv1d(in_channels = n2, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
+            # nn.BatchNorm1d(n2,eps=1e-3),
+            # nn.ReLU(),
+            # nn.MaxPool1d(kernel_size = self.poolsize))
+        
+        self.dense1 = nn.Sequential(
+            nn.Linear(in_features=(1200), out_features=300),
+            nn.BatchNorm1d(300,eps=1e-3),
+            nn.ReLU())
+        self.dense2 = nn.Linear(in_features=(300), out_features=1)
         
         if self.fc_train:
-            self.fchead = fcblock(200)
+            self.fchead = fcblock(300)
     
-    def forward(self, x): # (batch, 2, 4, 300)
-        x = x.view(-1, x.shape[-2], x.shape[-1])     # (batch*2, 4, 300) stack b6 and cast 
+    def forward(self, x): # (B, 2, 4, 300)
+        x = x.view(-1, x.shape[-2], x.shape[-1])     # (B*2, 4, 300) stack b6 and cast 
         x = self.seq_extractor(x)
         x = x.permute(0,2,1)
-        for transformer in self.transformer_blocks:
-            x = transformer.forward(x, None)
+        x = self.transformer_blocks(x)
         x = x.permute(0,2,1)
         x = self.seq_extractor_2(x)
         x = torch.flatten(x,1)
+        x = self.dense1(x)
         if self.fc_train:
-            h = x.clone().view(2,-1,x.shape[-1])   # (2, batch, d)
-        x = self.dense(x)
+            h = x.clone().view(2,-1,x.shape[-1])   # (2, B d) Cloned representations to pass to the fc_head and create fork in the graph
+        x = self.dense2(x)
         x = torch.flatten(x)
-        x = x.view(-1, 2)          # (batch, 2) separate out for y pred
+        x = x.view(-1, 2)          # (B, 2) separate out for y pred
         if self.fc_train:
             fc = self.fchead(h[0],h[1])
             return x, fc
@@ -392,26 +262,31 @@ class pairScan(nn.Module):
             return x
 
 class pairScanWrapper(nn.Module):
+    '''
+    Captum Integrated Gradients hates multiple outputs, and is strict with input and output shapes
+    This is not a problem for alleleScan, but for pairScan we have to write a wrapper that calls the pairScan backbone
+    See analysis_pairScan.ipynb FA section for more details
+    '''
     def __init__(self, model_obj):
         super(pairScanWrapper, self).__init__()
         self.backbone = model_obj     # model with trained weights
     
-    def forward(self, x): # (batch*2, 4, 300)
-        x = x.view(-1, 2, x.shape[-2], x.shape[-1])  # (batch, 2, 4, 300)
-        x,_ = self.backbone(x)      # main pairScan model
-        x = x.view(-1)                # (batch*2)
+    def forward(self, x): # (B*2, 4, 300) - Captum love
+        x = x.view(-1, 2, x.shape[-2], x.shape[-1])  # (B, 2, 4, 300) - Captum hate
+        x,_ = self.backbone(x)      # main pairScan model - Captum hate
+        x = x.view(-1)                # (B*2) - Captum love
         return x
 
 
 class quaidScan(nn.Module):
+    # DORMANT: A sum-difference model that I'm experimenting with, don't concern yourself with this for now
     def __init__(self, poolsize, dropout):
         super(quaidScan, self).__init__()
         self.poolsize = poolsize
         self.dropout = dropout
         n = 32
         n2 = 16
-        hidden=n
-        n_layers=4
+        n_layers=2
         attn_heads=4
 
         self.seq_extractor = nn.Sequential(
@@ -423,8 +298,7 @@ class quaidScan(nn.Module):
             nn.BatchNorm1d(n,eps=1e-3),
             nn.ReLU())
         
-        self.transformer_blocks = nn.ModuleList(
-            [TransformerBlock(hidden, attn_heads, hidden * 4, dropout) for _ in range(n_layers)])
+        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
         
         self.seq_extractor_2 = nn.Sequential(
             nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 2),
