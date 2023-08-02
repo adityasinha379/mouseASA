@@ -11,6 +11,7 @@ from utils import revcomp_m3, subsample_unegs
 
 # check device
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+RANDOM_SEED = 0
 
 def load_data(celltype, dataset, ident, get_rc=True, frac=0.6):
     basedir = '/data/leslie/shared/ASA/mouseASA/'
@@ -188,7 +189,6 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
 if __name__ == "__main__":
     initial_rate = 1e-3
     wd = 1e-3
-    RANDOM_SEED = 0
     N_EPOCHS = 100
     patience = 10
 
@@ -219,7 +219,8 @@ if __name__ == "__main__":
 
     torch.manual_seed(RANDOM_SEED)
     torch.backends.cudnn.deterministic=True
-    model = alleleScan(poolsize, dropout)
+    if modelname=='m3':
+        model = alleleScan(poolsize, dropout)
     model.to(DEVICE)
 
     loss_fcn = nn.MSELoss()
@@ -245,7 +246,7 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    SAVEPATH = basedir+'ckpt_models/{}/{}_{}_{}_{}_{}{}{}.hdf5'.format(celltype, celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)    # model save path
+    SAVEPATH = basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)    # model save path
     print(SAVEPATH)
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))      # load best model (NOT last epoch)
