@@ -10,5 +10,11 @@ dataset - Term used to talk about the kind of data used for training, accessed f
 &nbsp; 'b6' - allele-specific training with only b6 - data_ident.h5 - Compatible with alleleScan \
 &nbsp; 'ca' - allele-specific training with only cast - data_ident.h5 - Compatible with alleleScan \
 \
-alleleScan takes (n,4,300) input and gives (n,) as output \
-pairScan takes (n,2,4,300) input and gives (n,2) as accessibility output and (n,) as fold change output if fc_train is enabled
+alleleScan takes (n,4,300) input and gives (n,) as output - ran by run_back.py \
+pairScan takes (n,2,4,300) input and gives (n,2) as accessibility output and (n,) as fold change output if fc_train is enabled - run by run.py \
+\
+Basic job submission: \
+The names are a little stupid, I know \
+bsub_MouseASA.sh runs the surface level cpu job, which submits one or more gpu jobs in a for loop \
+These jobs run run_m3.sh \
+run_m3.sh runs either run.py or run_back.py depending on which model you're working with
