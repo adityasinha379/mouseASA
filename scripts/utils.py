@@ -31,8 +31,9 @@ def get_neg_summits(chromsummits, num, chrom_length):
     Output: neg_summits (num,)
     '''
     neg_summits = np.empty(0, dtype=np.int64)
+    rng = np.random.default_rng(seed=0)
     while True:                # Trial and error, sample summits, take only 10kb separated ones, repeat till you have num samples
-        temp = np.random.choice(np.arange(5000000, chrom_length-5000000), num, replace=False)
+        temp = rng.choice(np.arange(5000000, chrom_length-5000000), num, replace=False)
         idx = np.where(np.array([np.min(np.abs(x- chromsummits)) for x in temp])>10000)[0]     # at least 10kb from summit
         neg_summits = np.concatenate((neg_summits, temp[idx]))
         num-=len(idx)
