@@ -8,11 +8,11 @@
 
 rm -rf logs/log.out
 
-celltype='cd8'
+celltype='EpiSC'
 poolsize=2
 dropout='0.2'
 weight=1.0
-use_prior=1
+use_prior=0
 
 
 for dataset in 'both'
@@ -21,7 +21,7 @@ do
     do
         logfile="logs/log_${celltype}.${dataset}.BATCHSIZE${BATCH_SIZE}.out"
         rm -rf ${logfile}
-        bsub -J ${celltype}.${dataset}.${weight}.${BATCH_SIZE} -n 10 -R "A100" -sla llSC2 -W 3:00 -q gpuqueue -gpu "num=1" -o ${logfile} -eo ${logfile} "/data/leslie/sinhaa2/mouseASA/scripts/run_m3.sh $dataset $BATCH_SIZE $celltype $poolsize $dropout $use_prior $weight"
+        bsub -J ${celltype}.${dataset}.${weight}.${BATCH_SIZE} -n 10 -R "A100" -sla llSC2 -W 1:00 -q gpuqueue -gpu "num=1" -o ${logfile} -eo ${logfile} "/data/leslie/sunge/mouseASA/scripts/run_m3.sh $dataset $BATCH_SIZE $celltype $poolsize $dropout $use_prior $weight"
     done
     echo "${celltype}.${dataset}.${weight}.${BATCH_SIZE}"
 done

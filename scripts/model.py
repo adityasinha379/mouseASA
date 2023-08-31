@@ -191,7 +191,7 @@ class pairScan(nn.Module):
     As you can see, I've been doing some playing around with the model,
     so this is by no means a gold-standard and you are encouraged to do the same
     '''
-    def __init__(self, poolsize, dropout, fc_train=True):
+    def __init__(self, poolsize, dropout, fc_train=False):
         super(pairScan, self).__init__()
         self.poolsize = poolsize
         self.dropout = dropout

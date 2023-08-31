@@ -12,6 +12,7 @@ from utils import revcomp, revcomp_m3, subsample_unegs
 # check device
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 RANDOM_SEED = 0
+strain = 'cast'
 
 def load_data(celltype, dataset, ident, get_rc=True, frac=0.3):
     '''
@@ -21,27 +22,27 @@ def load_data(celltype, dataset, ident, get_rc=True, frac=0.3):
     For this, we pretrain using the 'ref' dataset, then in a second job we use the commented version of 'both' code along with a much lower LR for fine-tuning
     This commented version is much simpler since it doesn't load any unegs
     '''
-    basedir = '/data/leslie/shared/ASA/mouseASA/'
+    basedir = f'/data/leslie/sunge/f1_ASA/{strain}/'
     datadir = basedir+'/'+celltype+'/data/'
 
     with h5py.File(datadir+'data'+ident+'.h5','r') as f:
         if dataset=='both':         # for normal allele aware training
             uneg_idx = subsample_unegs([len(f['x_train_b6_unegs'][()]), len(f['x_val_b6_unegs'][()])], frac=frac)
             xTr = np.stack(( np.vstack((f['x_train_b6'][()], f['x_train_b6_unegs'][()][uneg_idx[0]])),
-                np.vstack((f['x_train_cast'][()], f['x_train_cast_unegs'][()][uneg_idx[0]])) ), axis=1)      # (n, 2, 300, 4)
+                np.vstack((f[f'x_train_{strain}'][()], f[f'x_train_{strain}_unegs'][()][uneg_idx[0]])) ), axis=1)      # (n, 2, 300, 4)
             yTr = np.stack(( np.concatenate((f['y_train_b6'][()], f['y_train_unegs'][()][uneg_idx[0]])),
-                np.concatenate((f['y_train_cast'][()], f['y_train_unegs'][()][uneg_idx[0]])) ), axis=-1)  # (n, 2)
+                np.concatenate((f[f'y_train_{strain}'][()], f['y_train_unegs'][()][uneg_idx[0]])) ), axis=-1)  # (n, 2)
             xVa = np.stack(( np.vstack((f['x_val_b6'][()], f['x_val_b6_unegs'][()][uneg_idx[1]])),
-            np.vstack((f['x_val_cast'][()], f['x_val_cast_unegs'][()][uneg_idx[1]])) ), axis=1)
+            np.vstack((f[f'x_val_{strain}'][()], f[f'x_val_{strain}_unegs'][()][uneg_idx[1]])) ), axis=1)
             yVa = np.stack(( np.concatenate((f['y_val_b6'][()], f['y_val_unegs'][()][uneg_idx[1]])),
-                np.concatenate((f['y_val_cast'][()], f['y_val_unegs'][()][uneg_idx[1]])) ), axis=-1)
+                np.concatenate((f[f'y_val_{strain}'][()], f['y_val_unegs'][()][uneg_idx[1]])) ), axis=-1)
         # if dataset=='both':           # for fine tuning pretrained reference model - no unegs to be used here
-        #     xTr = np.stack(( f['x_train_b6'][()], f['x_train_cast'][()] ), axis=1)      # (n, 2, 300, 4)
-        #     yTr = np.stack(( f['y_train_b6'][()], f['y_train_cast'][()] ), axis=-1)  # (n, 2)
-        #     xVa = np.stack(( f['x_val_b6'][()], f['x_val_cast'][()] ), axis=1)
-        #     yVa = np.stack(( f['y_val_b6'][()], f['y_val_cast'][()] ), axis=-1)
-        xTe = np.stack((f['x_test_b6'][()],f['x_test_cast'][()]), axis=1)
-        yTe = np.stack((f['y_test_b6'][()],f['y_test_cast'][()]), axis=-1)
+        #     xTr = np.stack(( f['x_train_b6'][()], f[f'x_train_{strain}'][()] ), axis=1)      # (n, 2, 300, 4)
+        #     yTr = np.stack(( f['y_train_b6'][()], f[f'y_train_{strain}'][()] ), axis=-1)  # (n, 2)
+        #     xVa = np.stack(( f['x_val_b6'][()], f[f'x_val_{strain}'][()] ), axis=1)
+        #     yVa = np.stack(( f['y_val_b6'][()], f[f'y_val_{strain}'][()] ), axis=-1)
+        xTe = np.stack((f['x_test_b6'][()],f[f'x_test_{strain}'][()]), axis=1)
+        yTe = np.stack((f['y_test_b6'][()],f[f'y_test_{strain}'][()]), axis=-1)
 
     if dataset=='ref':               # for pretraining reference model
         with h5py.File(datadir+'data'+ident+'_'+dataset+'.h5','r') as f:
@@ -218,6 +219,9 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     return model, train_losses, valid_losses
     
 if __name__ == "__main__":
+    print(DEVICE)
+    asd
+    
     initial_rate = 1e-3
     wd = 1e-3
     N_EPOCHS = 100
@@ -235,10 +239,11 @@ if __name__ == "__main__":
         weight = 1.0
     
     gc = ''
-    ident = '_vi_150bp_aug'
+    ident = ''
     modelname = 'ad'
+    disc = '2c2t1p'
 
-    basedir = '/data/leslie/shared/ASA/mouseASA/'
+    basedir = f'/data/leslie/sunge/f1_ASA/{strain}/'
     if use_prior:
         #fourier param
         freq_limit = 50
@@ -278,7 +283,7 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    SAVEPATH =  basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}_fc.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident, str(weight))
+    SAVEPATH =  basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}_{}_fc.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident, str(weight), disc)
     print(SAVEPATH)
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
@@ -289,4 +294,4 @@ if __name__ == "__main__":
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'{}_{}_{}_{}{}{}_fc.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident, str(weight)), test_preds)
+    np.save(predsdir+'{}_{}_{}_{}{}{}_{}_fc.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident, str(weight), disc), test_preds)

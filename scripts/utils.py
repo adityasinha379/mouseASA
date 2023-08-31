@@ -20,7 +20,7 @@ def trim_weights_dict(weights):
         del weights[k]
     return weights
 
-def get_neg_summits(chromsummits, num, chrom_length):
+def get_neg_summits(chromsummits, num, chrom_length, seed):
     '''
     Code to get "true" uneg summits for a  particular chromosome.
     This samples unegs uniformly from the background instead of from flanks of peaks and generally performs better when compared to taking flanks
@@ -31,7 +31,7 @@ def get_neg_summits(chromsummits, num, chrom_length):
     Output: neg_summits (num,)
     '''
     neg_summits = np.empty(0, dtype=np.int64)
-    rng = np.random.default_rng(seed=0)
+    rng = np.random.default_rng(seed=seed)
     while True:                # Trial and error, sample summits, take only 10kb separated ones, repeat till you have num samples
         temp = rng.choice(np.arange(5000000, chrom_length-5000000), num, replace=False)
         idx = np.where(np.array([np.min(np.abs(x- chromsummits)) for x in temp])>10000)[0]     # at least 10kb from summit

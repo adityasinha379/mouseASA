@@ -8,4 +8,4 @@ dropout=$5
 use_prior=$6
 weight=$7
 
-python /data/leslie/sinhaa2/mouseASA/scripts/run.py $dataset $BATCH_SIZE $celltype $poolsize $dropout $use_prior $weight
+python /data/leslie/sunge/mouseASA/scripts/run.py $dataset $BATCH_SIZE $celltype $poolsize $dropout $use_prior $weight
