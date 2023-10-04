@@ -97,34 +97,42 @@ class Dataset_FC(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return self.x[index].astype(np.float32), self.y[index].astype(np.float32), self.fc[index].astype(np.float32), self.conf.astype(np.float32)
 
-def test(data_loader, model):
+def test(data_loader, model, fc_head):
     model.eval()
     with torch.no_grad():
         preds = []
         for input_seqs,_,_ in data_loader:
             input_seqs = input_seqs.to(DEVICE)
-            logit_pred_vals, _ = model(input_seqs)
+            if fc_head:
+                logit_pred_vals, _ = model(input_seqs)
+            else:
+                logit_pred_vals = model(input_seqs)
             preds.append(logit_pred_vals.detach().cpu().numpy())
     preds = np.concatenate(preds)
     preds = ((preds[:len(preds)//2]+preds[len(preds)//2:])/2).T.reshape(-1)        # average of revcomp preds
     # preds = preds[:len(preds)//2]
     return preds
 
-def validate(data_loader, model, loss_fcn, fc_frac):
+def validate(data_loader, model, loss_fcn, fc_head):
     model.eval()  # Switch to evaluation mode
     losses = []
     for input_seqs, output_vals, fc in data_loader:
         input_seqs = input_seqs.to(DEVICE)
         output_vals = output_vals.to(DEVICE)
         fc = fc.to(DEVICE)
-
-        logit_pred_vals, fc_preds = model(input_seqs)
-        # conf_weights = (torch.abs(fc)>0.).type(fc.dtype)
-        loss = loss_fcn(logit_pred_vals, output_vals) + fc_frac*fc_loss(fc_preds, fc) #, conf_weights=conf_weights)
+        
+        if fc_head:
+            logit_pred_vals, fc_preds = model(input_seqs)
+            # conf_weights = (torch.abs(fc)>0.).type(fc.dtype)
+            loss = loss_fcn(logit_pred_vals, output_vals) + 0.3*fc_loss(fc_preds, fc) #, conf_weights=conf_weights)
+        else:
+            logit_pred_vals = model(input_seqs)
+            loss = loss_fcn(logit_pred_vals, output_vals)
+            
         losses.append(loss.item())
     return model, losses
 
-def train(data_loader, model, optimizer, loss_fcn, fc_frac, use_prior, weight=1.0):
+def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
     model.train()  # Switch to training mode
     losses = []
     cnt=0
@@ -150,10 +158,10 @@ def train(data_loader, model, optimizer, loss_fcn, fc_frac, use_prior, weight=1.
             fourier_loss = weight*fourier_att_prior_loss(output_vals.reshape(-1),
                 input_grads.permute(0,1,3,2).reshape(-1,input_grads.shape[-1],input_grads.shape[-2]),
                 freq_limit, limit_softness, att_prior_grad_smooth_sigma)
-            loss = loss_fcn(logit_pred_vals, output_vals) + fourier_loss + fc_frac*fc_loss(fc_preds, fc) #, conf_weights=conf_weights)
+            loss = loss_fcn(logit_pred_vals, output_vals) + fourier_loss + 0.3*fc_loss(fc_preds, fc) #, conf_weights=conf_weights)
         else:
             logit_pred_vals, fc_preds = model(input_seqs)
-            loss = loss_fcn(logit_pred_vals, output_vals) + fc_frac*fc_loss(fc_preds, fc)
+            loss = loss_fcn(logit_pred_vals, output_vals) + 0.3*fc_loss(fc_preds, fc)
         
         loss.backward()  # Compute gradient
         torch.nn.utils.clip_grad_norm_(model.parameters(), 10000)
@@ -165,7 +173,48 @@ def train(data_loader, model, optimizer, loss_fcn, fc_frac, use_prior, weight=1.
 
     return model, optimizer, losses
 
-def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_fcn, SAVEPATH, patience, fc_frac, use_prior, weight=1.0):
+def train_nofc(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
+    model.train()  # Switch to training mode
+    losses = []
+    cnt=0
+    for input_seqs, output_vals, fc in data_loader:
+        cnt+=1
+        optimizer.zero_grad()
+        input_seqs = input_seqs.to(DEVICE)
+        output_vals = output_vals.to(DEVICE)
+        fc = fc.to(DEVICE)
+        # conf_weights = (torch.abs(fc)>0.).type(fc.dtype)
+        # Clear gradients from last batch if training
+        if use_prior:
+            input_seqs.requires_grad = True  # Set gradient required
+            logit_pred_vals = model(input_seqs)
+            # Compute the gradients of the output with respect to the input
+            input_grads, = torch.autograd.grad(
+                logit_pred_vals, input_seqs,
+                grad_outputs=place_tensor(torch.ones(logit_pred_vals.size())),
+                retain_graph=True, create_graph=True)
+            # We'll be operating on the gradient itself, so we need to create the graph
+            input_grads = input_grads * input_seqs  # Gradient * input
+            input_seqs.requires_grad = False  # Reset gradient required
+            fourier_loss = weight*fourier_att_prior_loss(output_vals.reshape(-1),
+                input_grads.permute(0,1,3,2).reshape(-1,input_grads.shape[-1],input_grads.shape[-2]),
+                freq_limit, limit_softness, att_prior_grad_smooth_sigma)
+            loss = loss_fcn(logit_pred_vals, output_vals)
+        else:
+            logit_pred_vals = model(input_seqs)
+            loss = loss_fcn(logit_pred_vals, output_vals)
+        
+        loss.backward()  # Compute gradient
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 10000)
+        optimizer.step()  # Update weights through backprop
+        if use_prior:
+            losses.append([loss.item()-fourier_loss.item(), fourier_loss.item()])
+        else:
+            losses.append(loss.item())
+
+    return model, optimizer, losses
+
+def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_fcn, SAVEPATH, patience, fc_head, use_prior, weight=1.0):
     """
     Trains the model for the given number of epochs.
     """
@@ -175,7 +224,11 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     counter = 0
     for epoch_i in range(num_epochs):
         counter += 1
-        model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, fc_frac, use_prior, weight)
+        if fc_head:
+            model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
+        else:
+            model, optimizer, losses = train_nofc(train_loader, model, optimizer, loss_fcn, use_prior, weight)
+
         if use_prior:
             fourier_losses = [x[1] for x in losses]
             losses = [x[0] for x in losses]
@@ -187,7 +240,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
             train_losses.append(train_loss_mean)
         
         with torch.no_grad():
-            _, losses = validate(valid_loader, model, loss_fcn, fc_frac)
+            _, losses = validate(valid_loader, model, loss_fcn, fc_head)
             valid_loss_mean = np.mean(losses)
             valid_losses.append(valid_loss_mean)
             
@@ -233,15 +286,15 @@ if __name__ == "__main__":
     poolsize = int(sys.argv[6]) #2
     dropout = float(sys.argv[7]) #0.2
     use_prior = int(sys.argv[8])
-    fc_frac = float(sys.argv[9])
     try:
-        weight = float(sys.argv[10])  # fourier loss weighting
+        weight = float(sys.argv[9])  # fourier loss weighting
     except:
         weight = 1.0
     
     gc = ''
     ident = ''
     modelname = 'ad'
+    fc_head = False
 
     basedir = f'/data/leslie/sunge/f1_ASA/{strain}/'
     if use_prior:
@@ -256,7 +309,7 @@ if __name__ == "__main__":
     torch.manual_seed(RANDOM_SEED)
     torch.backends.cudnn.deterministic=True
     if modelname=='ad':
-        model = pairScan(poolsize, dropout, fc_train=True)    # change to True for fc training
+        model = pairScan(poolsize, dropout, fc_train=fc_head)    # change to True for fc training
     model.to(DEVICE)
     print(sum([p.numel() for p in model.parameters()]))
 
@@ -283,15 +336,15 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
 
-    SAVEPATH = f"{basedir}{celltype}/ckpt_models/{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}{gc}{ident}_{str(weight)}_{model_disc}_FC{fc_frac}.hdf5"
+    SAVEPATH = f"{basedir}{celltype}/ckpt_models/{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}{gc}{ident}_{str(weight)}_{model_disc}.hdf5"
     print(f"Savepath: {SAVEPATH}")
-    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, fc_frac, use_prior=bool(use_prior), weight=weight)
+    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, fc_head, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
-    test_preds = test(test_loader, model)     # averaged over revcomps
+    test_preds = test(test_loader, model, fc_head)     # averaged over revcomps
     predsdir = basedir+f'{celltype}/preds/'
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(f"{predsdir}{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}{gc}{ident}_{str(weight)}_{model_disc}_FC{fc_frac}.npy", test_preds)
+    np.save(f"{predsdir}{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}{gc}{ident}_{str(weight)}_{model_disc}.npy", test_preds)

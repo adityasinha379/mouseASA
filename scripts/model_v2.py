@@ -209,28 +209,28 @@ class pairScan(nn.Module):
             
             nn.Conv1d(in_channels = n2, out_channels = n, kernel_size = 11, stride = 1, dilation = 1, padding = 'same'),
             nn.BatchNorm1d(n,eps=1e-3),
-            nn.ReLU())#,
+            nn.ReLU(),
             
-            # nn.Conv1d(in_channels = n, out_channels = n, kernel_size = 11, stride = 1, dilation = 4, padding = 'same'),
-            # nn.BatchNorm1d(n,eps=1e-3),
-            # nn.ReLU(),
+            nn.Conv1d(in_channels = n, out_channels = n, kernel_size = 11, stride = 1, dilation = 4, padding = 'same'),
+            nn.BatchNorm1d(n,eps=1e-3),
+            nn.ReLU(),
             
-            # nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 11, stride = 1, dilation = 8, padding = 'same'),
-            # nn.BatchNorm1d(n2,eps=1e-3),
-            # nn.ReLU())
+            nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 11, stride = 1, dilation = 8, padding = 'same'),
+            nn.BatchNorm1d(n2,eps=1e-3),
+            nn.ReLU())
         
-        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
+        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n2, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
         
         self.seq_extractor_2 = nn.Sequential(
-            nn.Conv1d(in_channels = n, out_channels = n3, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
+            nn.Conv1d(in_channels = n2, out_channels = n3, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
             nn.BatchNorm1d(n3,eps=1e-3),
             nn.ReLU(),
-            nn.MaxPool1d(kernel_size = self.poolsize))#,
+            nn.MaxPool1d(kernel_size = self.poolsize),
 
-            # nn.Conv1d(in_channels = n2, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
-            # nn.BatchNorm1d(n2,eps=1e-3),
-            # nn.ReLU(),
-            # nn.MaxPool1d(kernel_size = self.poolsize))
+            nn.Conv1d(in_channels = n3, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
+            nn.BatchNorm1d(n2,eps=1e-3),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size = self.poolsize))
         
         self.dense1 = nn.Sequential(
             nn.Linear(in_features=(1200), out_features=300),
@@ -274,7 +274,6 @@ class pairScanWrapper(nn.Module):
     def forward(self, x): # (B*2, 4, 300) - Captum love
         x = x.view(-1, 2, x.shape[-2], x.shape[-1])  # (B, 2, 4, 300) - Captum hate
         x,_ = self.backbone(x)      # main pairScan model - Captum hate
-        # x = self.backbone(x)      # for no FC head
         x = x.view(-1)                # (B*2) - Captum love
         return x
 
