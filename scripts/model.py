@@ -215,6 +215,7 @@ class pairScan(nn.Module):
         x = x.view(-1, x.shape[-2], x.shape[-1])     # (batch*2, 4, 300) stack b6 and cast 
         x = self.seq_extractor(x)
         x = x.permute(2,0,1)    # (seq, batch, feat)
+        x = self.transformer_block(x)
         x = x.permute(1,2,0)   # (batch, feat, seq)
         x = self.seq_extractor_2(x)
         x = self.seq_extractor_3(x)

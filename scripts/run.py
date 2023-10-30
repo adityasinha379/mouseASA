@@ -151,14 +151,10 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     train_losses = []
     valid_losses = []
     counter = 0
-    ## SWA
-    # swa_model = AveragedModel(model)
 
     for epoch_i in range(num_epochs):
         counter += 1
         model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
-        # if epoch_i >= 20:
-        #     swa_model.update_parameters(model)
         
         if use_prior:
             fourier_losses = [x[1] for x in losses]
@@ -199,7 +195,6 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
             print('Val loss did not improve for {} epochs, early stopping...'.format(patience))
             break
     
-    # model = swa_model
     return model, train_losses, valid_losses
     
 if __name__ == "__main__":
@@ -270,9 +265,6 @@ if __name__ == "__main__":
     # model.load_state_dict(torch.load(SAVEPATH))
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
-    # model.to('cpu')
-    # torch.optim.swa_utils.update_bn(train_loader, model)
-    # torch.save(model.state_dict(), SAVEPATH)
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
