@@ -1,11 +1,13 @@
 import numpy as np
+import pandas as pd
 from datetime import datetime
 import torch
 import torch.nn as nn
+from torch.optim.swa_utils import AveragedModel, SWALR
 from torch.utils.data import DataLoader
 import sys
 import h5py
-from model import pairScan, place_tensor, fourier_att_prior_loss, fc_loss
+from model import pairScan, place_tensor, fourier_att_prior_loss
 import os
 from utils import revcomp, revcomp_m3, subsample_unegs
 
@@ -13,19 +15,11 @@ from utils import revcomp, revcomp_m3, subsample_unegs
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 RANDOM_SEED = 0
 
-def load_data(celltype, dataset, ident, get_rc=True, frac=0.3):
-    '''
-    This function is a little crazy compared to its alleleScan counterpart, so let me walk you through it
-    Basically, pairScan is meant to train only for the 'both dataset', which it does with the uncommented 'both' code
-    However, we have been recently trying to see if we can pretrain on reference (pooled pseudodiploid counts) and fine tune on allele-specificity
-    For this, we pretrain using the 'ref' dataset, then in a second job we use the commented version of 'both' code along with a much lower LR for fine-tuning
-    This commented version is much simpler since it doesn't load any unegs
-    '''
-    basedir = '/data/leslie/shared/ASA/mouseASA/'
-    datadir = basedir+'/'+celltype+'/data/'
+def load_data(celltype, dataset, ident, get_rc=True, frac=0.3, finetune=False):
+    basedir = f'/data/leslie/shared/ASA/mouseASA/{celltype}/cast/data/'
 
-    with h5py.File(datadir+'data'+ident+'.h5','r') as f:
-        if dataset=='both':         # for normal allele aware training
+    with h5py.File(basedir+'data'+ident+'.h5','r') as f:
+        if dataset=='both' and not finetune:         # for normal allele aware training
             uneg_idx = subsample_unegs([len(f['x_train_b6_unegs'][()]), len(f['x_val_b6_unegs'][()])], frac=frac)
             xTr = np.stack(( np.vstack((f['x_train_b6'][()], f['x_train_b6_unegs'][()][uneg_idx[0]])),
                 np.vstack((f['x_train_cast'][()], f['x_train_cast_unegs'][()][uneg_idx[0]])) ), axis=1)      # (n, 2, 300, 4)
@@ -35,16 +29,18 @@ def load_data(celltype, dataset, ident, get_rc=True, frac=0.3):
             np.vstack((f['x_val_cast'][()], f['x_val_cast_unegs'][()][uneg_idx[1]])) ), axis=1)
             yVa = np.stack(( np.concatenate((f['y_val_b6'][()], f['y_val_unegs'][()][uneg_idx[1]])),
                 np.concatenate((f['y_val_cast'][()], f['y_val_unegs'][()][uneg_idx[1]])) ), axis=-1)
-        # if dataset=='both':           # for fine tuning pretrained reference model - no unegs to be used here
-        #     xTr = np.stack(( f['x_train_b6'][()], f['x_train_cast'][()] ), axis=1)      # (n, 2, 300, 4)
-        #     yTr = np.stack(( f['y_train_b6'][()], f['y_train_cast'][()] ), axis=-1)  # (n, 2)
-        #     xVa = np.stack(( f['x_val_b6'][()], f['x_val_cast'][()] ), axis=1)
-        #     yVa = np.stack(( f['y_val_b6'][()], f['y_val_cast'][()] ), axis=-1)
+        elif dataset=='both' and finetune:           # for fine tuning pretrained model
+            idx_tr = np.where(pd.read_csv(basedir+'significance/betabinom_result_combCounts_150bp_trainOnly.csv')['p.adj'] < 0.05)[0]
+            idx_va = np.where(pd.read_csv(basedir+'significance/betabinom_result_combCounts_150bp_valOnly.csv')['p.adj'] < 0.05)[0]
+            xTr = np.stack(( f['x_train_b6'][()][idx_tr], f['x_train_cast'][()][idx_tr] ), axis=1)      # (n, 2, 300, 4)
+            yTr = np.stack(( f['y_train_b6'][()][idx_tr], f['y_train_cast'][()][idx_tr] ), axis=-1)  # (n, 2)
+            xVa = np.stack(( f['x_val_b6'][()][idx_va], f['x_val_cast'][()][idx_va] ), axis=1)
+            yVa = np.stack(( f['y_val_b6'][()][idx_va], f['y_val_cast'][()][idx_va] ), axis=-1)
         xTe = np.stack((f['x_test_b6'][()],f['x_test_cast'][()]), axis=1)
         yTe = np.stack((f['y_test_b6'][()],f['y_test_cast'][()]), axis=-1)
 
     if dataset=='ref':               # for pretraining reference model
-        with h5py.File(datadir+'data'+ident+'_'+dataset+'.h5','r') as f:
+        with h5py.File(basedir+'data'+ident+'_'+dataset+'.h5','r') as f:
             uneg_idx = subsample_unegs([len(f['x_train_unegs'][()]), len(f['x_val_unegs'][()])], frac=frac)
             xTr = np.vstack((f['x_train'][()], f['x_train_unegs'][()][uneg_idx[0]]))      # (n, 300, 4)
             yTr = np.concatenate((f['y_train'][()], f['y_train_unegs'][()][uneg_idx[0]]))  # (n, )
@@ -67,7 +63,6 @@ def load_data(celltype, dataset, ident, get_rc=True, frac=0.3):
     return xTr, xVa, xTe, yTr, yVa, yTe
 
 class Dataset(torch.utils.data.Dataset):
-    # Notice the additional fold change component
     def __init__(self, x, y):
         'Initialization'
         self.x = x.swapaxes(2,3)  # (batch, 2, 4, 300)
@@ -81,21 +76,6 @@ class Dataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         return self.x[index].astype(np.float32), self.y[index].astype(np.float32), self.fc[index].astype(np.float32)
 
-class Dataset_FC(torch.utils.data.Dataset):
-    # DORMANT: For use when doing confidence weighting
-    def __init__(self, x, y, conf):
-        'Initialization'
-        self.x = x.swapaxes(2,3)  # (batch, 2, 4, 300)
-        self.y = y
-        self.fc = y[:,1] - y[:,0]
-        self.conf = conf
-        
-    def __len__(self):
-        'Denotes the total number of samples'
-        return self.x.shape[0]
-
-    def __getitem__(self, index):
-        return self.x[index].astype(np.float32), self.y[index].astype(np.float32), self.fc[index].astype(np.float32), self.conf.astype(np.float32)
 
 def test(data_loader, model):
     model.eval()
@@ -103,7 +83,7 @@ def test(data_loader, model):
         preds = []
         for input_seqs,_,_ in data_loader:
             input_seqs = input_seqs.to(DEVICE)
-            logit_pred_vals, _ = model(input_seqs)
+            logit_pred_vals = model(input_seqs)
             preds.append(logit_pred_vals.detach().cpu().numpy())
     preds = np.concatenate(preds)
     preds = ((preds[:len(preds)//2]+preds[len(preds)//2:])/2).T.reshape(-1)        # average of revcomp preds
@@ -118,9 +98,8 @@ def validate(data_loader, model, loss_fcn):
         output_vals = output_vals.to(DEVICE)
         fc = fc.to(DEVICE)
 
-        logit_pred_vals, fc_preds = model(input_seqs)
-        # conf_weights = (torch.abs(fc)>0.).type(fc.dtype)
-        loss = loss_fcn(logit_pred_vals, output_vals) + 0.3*fc_loss(fc_preds, fc) #, conf_weights=conf_weights)
+        logit_pred_vals = model(input_seqs)
+        loss = loss_fcn(logit_pred_vals, output_vals)
         losses.append(loss.item())
     return model, losses
 
@@ -134,11 +113,10 @@ def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
         input_seqs = input_seqs.to(DEVICE)
         output_vals = output_vals.to(DEVICE)
         fc = fc.to(DEVICE)
-        # conf_weights = (torch.abs(fc)>0.).type(fc.dtype)
         # Clear gradients from last batch if training
         if use_prior:
             input_seqs.requires_grad = True  # Set gradient required
-            logit_pred_vals, fc_preds = model(input_seqs)
+            logit_pred_vals = model(input_seqs)
             # Compute the gradients of the output with respect to the input
             input_grads, = torch.autograd.grad(
                 logit_pred_vals, input_seqs,
@@ -150,10 +128,10 @@ def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
             fourier_loss = weight*fourier_att_prior_loss(output_vals.reshape(-1),
                 input_grads.permute(0,1,3,2).reshape(-1,input_grads.shape[-1],input_grads.shape[-2]),
                 freq_limit, limit_softness, att_prior_grad_smooth_sigma)
-            loss = loss_fcn(logit_pred_vals, output_vals) + fourier_loss + 0.3*fc_loss(fc_preds, fc) #, conf_weights=conf_weights)
+            loss = loss_fcn(logit_pred_vals, output_vals) + fourier_loss
         else:
-            logit_pred_vals, fc_preds = model(input_seqs)
-            loss = loss_fcn(logit_pred_vals, output_vals) + 0.3*fc_loss(fc_preds, fc)
+            logit_pred_vals = model(input_seqs)
+            loss = loss_fcn(logit_pred_vals, output_vals)
         
         loss.backward()  # Compute gradient
         torch.nn.utils.clip_grad_norm_(model.parameters(), 10000)
@@ -173,9 +151,15 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     train_losses = []
     valid_losses = []
     counter = 0
+    ## SWA
+    # swa_model = AveragedModel(model)
+
     for epoch_i in range(num_epochs):
         counter += 1
         model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
+        # if epoch_i >= 20:
+        #     swa_model.update_parameters(model)
+        
         if use_prior:
             fourier_losses = [x[1] for x in losses]
             losses = [x[0] for x in losses]
@@ -214,12 +198,13 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
         if counter >= patience:
             print('Val loss did not improve for {} epochs, early stopping...'.format(patience))
             break
-
+    
+    # model = swa_model
     return model, train_losses, valid_losses
     
 if __name__ == "__main__":
     initial_rate = 1e-3
-    wd = 1e-3
+    wd = 1e-2
     N_EPOCHS = 100
     patience = 10
 
@@ -238,7 +223,7 @@ if __name__ == "__main__":
     ident = '_vi_150bp_aug'
     modelname = 'ad'
 
-    basedir = '/data/leslie/shared/ASA/mouseASA/'
+    basedir = f'/data/leslie/shared/ASA/mouseASA/{celltype}/cast'
     if use_prior:
         #fourier param
         freq_limit = 50
@@ -251,18 +236,18 @@ if __name__ == "__main__":
     torch.manual_seed(RANDOM_SEED)
     torch.backends.cudnn.deterministic=True
     if modelname=='ad':
-        model = pairScan(poolsize, dropout, fc_train=True)    # change to True for fc training
+        model = pairScan(poolsize, dropout, fc_train=False)    # change to True for fc training
     model.to(DEVICE)
     print(sum([p.numel() for p in model.parameters()]))
 
     loss_fcn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=initial_rate, weight_decay=wd)
 
     x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.3)
 
     ## define the data loaders
-    train_dataset = Dataset(x_train, y_train)
-    val_dataset = Dataset(x_valid, y_valid)
+    train_dataset = Dataset(x_train, y_train) #, get_confweights(dataset='train'))
+    val_dataset = Dataset(x_valid, y_valid) #, get_confweights(dataset='val'))
     test_dataset = Dataset(x_test, y_test)
 
     train_loader = DataLoader(dataset=train_dataset, 
@@ -278,15 +263,22 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    SAVEPATH =  basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}_fc.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident, str(weight))
-    print(SAVEPATH)
+    name = 'test_both_1'
+    # SAVEPATH =  f'{basedir}/ckpt_models/{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}_{gc}{ident}_fc.hdf5'
+    SAVEPATH = f'{basedir}/ckpt_models/{name}.hdf5'
+    # print(SAVEPATH)
+    # model.load_state_dict(torch.load(SAVEPATH))
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
+    # model.to('cpu')
+    # torch.optim.swa_utils.update_bn(train_loader, model)
+    # torch.save(model.state_dict(), SAVEPATH)
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
-    predsdir = basedir+f'{celltype}/preds/'
+    predsdir = f'{basedir}/preds/'
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'{}_{}_{}_{}{}{}_fc.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident, str(weight)), test_preds)
+    # np.save(f'{predsdir}/{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}_{gc}{ident}_fc.npy', test_preds)
+    np.save(f'{predsdir}{name}.npy', test_preds)

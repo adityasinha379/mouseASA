@@ -159,43 +159,21 @@ def fc_loss(output, target, conf_weights=1.):\
     return loss
 
 class fcblock(nn.Module):
-    '''
-    Fold change head of pairScan, currently under experimentation
-    Seems useless as of now as the predictions from this head are very bad compared to ground truth fold change
-    '''
     def __init__(self,n):
         super(fcblock, self).__init__()
-        # self.dense1 = nn.Sequential(
-        #     nn.Linear(in_features=(1200), out_features=n),
-        #     nn.BatchNorm1d(n,eps=1e-3),
-        #     nn.ReLU())
-        # self.dense2 = nn.Sequential(
-        #     nn.Linear(in_features=(1200), out_features=n),
-        #     nn.BatchNorm1d(n,eps=1e-3),
-        #     nn.ReLU())
-        self.final = nn.Sequential(
-            # nn.Linear(in_features=(2*n), out_features=100),
-            nn.Linear(in_features=(n), out_features=1))
+        self.final = nn.Linear(in_features=(n), out_features=1)
 
     def forward(self,x1,x2):
-        # x1 = self.dense1(x1)
-        # x2 = self.dense2(x2)
-        # x = torch.cat([x1,x2], dim=1)
-        x = x2-x1              # Subtracting representations of b6 and cast
+        x = torch.cat([x1,x2], dim=1)
         out = torch.flatten( self.final(x) )
         return out
 
 class pairScan(nn.Module):
-    '''
-    Siamese architecture - Paired training
-    As you can see, I've been doing some playing around with the model,
-    so this is by no means a gold-standard and you are encouraged to do the same
-    '''
     def __init__(self, poolsize, dropout, fc_train=True):
         super(pairScan, self).__init__()
         self.poolsize = poolsize
         self.dropout = dropout
-        self.fc_train = fc_train     # whether to use fold change head or not
+        self.fc_train = fc_train
         n = 32
         n2 = 16
         n3 = 8
@@ -209,52 +187,44 @@ class pairScan(nn.Module):
             
             nn.Conv1d(in_channels = n2, out_channels = n, kernel_size = 11, stride = 1, dilation = 1, padding = 'same'),
             nn.BatchNorm1d(n,eps=1e-3),
-            nn.ReLU())#,
-            
-            # nn.Conv1d(in_channels = n, out_channels = n, kernel_size = 11, stride = 1, dilation = 4, padding = 'same'),
-            # nn.BatchNorm1d(n,eps=1e-3),
-            # nn.ReLU(),
-            
-            # nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 11, stride = 1, dilation = 8, padding = 'same'),
-            # nn.BatchNorm1d(n2,eps=1e-3),
-            # nn.ReLU())
+            nn.ReLU())
         
-        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
+        self.transformer_block = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, layer_norm_eps=1e-3), num_layers=n_layers)
         
         self.seq_extractor_2 = nn.Sequential(
             nn.Conv1d(in_channels = n, out_channels = n3, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
             nn.BatchNorm1d(n3,eps=1e-3),
             nn.ReLU(),
-            nn.MaxPool1d(kernel_size = self.poolsize))#,
-
-            # nn.Conv1d(in_channels = n2, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
-            # nn.BatchNorm1d(n2,eps=1e-3),
-            # nn.ReLU(),
-            # nn.MaxPool1d(kernel_size = self.poolsize))
+            nn.MaxPool1d(kernel_size = self.poolsize))
+        self.seq_extractor_3 = nn.Sequential(
+            nn.Conv1d(in_channels = n3, out_channels = 4, kernel_size = 5, stride = 1, dilation = 1, padding = 'same'),
+            nn.BatchNorm1d(4,eps=1e-3),
+            nn.ReLU(),
+            nn.MaxPool1d(kernel_size = self.poolsize))
         
         self.dense1 = nn.Sequential(
-            nn.Linear(in_features=(1200), out_features=300),
-            nn.BatchNorm1d(300,eps=1e-3),
+            nn.Linear(in_features=(300), out_features=100),
+            nn.BatchNorm1d(100,eps=1e-3),
             nn.ReLU())
-        self.dense2 = nn.Linear(in_features=(300), out_features=1)
+        self.dense2 = nn.Linear(in_features=(100), out_features=1)
         
         if self.fc_train:
-            self.fchead = fcblock(300)
-    
-    def forward(self, x): # (B, 2, 4, 300)
-        x = x.view(-1, x.shape[-2], x.shape[-1])     # (B*2, 4, 300) stack b6 and cast 
+            self.fchead = fcblock(200)
+
+    def forward(self, x): # (batch, 2, 4, 300)
+        x = x.view(-1, x.shape[-2], x.shape[-1])     # (batch*2, 4, 300) stack b6 and cast 
         x = self.seq_extractor(x)
-        x = x.permute(0,2,1)
-        x = self.transformer_blocks(x)
-        x = x.permute(0,2,1)
+        x = x.permute(2,0,1)    # (seq, batch, feat)
+        x = x.permute(1,2,0)   # (batch, feat, seq)
         x = self.seq_extractor_2(x)
+        x = self.seq_extractor_3(x)
         x = torch.flatten(x,1)
         x = self.dense1(x)
         if self.fc_train:
-            h = x.clone().view(2,-1,x.shape[-1])   # (2, B d) Cloned representations to pass to the fc_head and create fork in the graph
+            h = x.clone().view(-1, 2, x.shape[-1]).permute(1,0,2)   # (batch, 2, d)
         x = self.dense2(x)
         x = torch.flatten(x)
-        x = x.view(-1, 2)          # (B, 2) separate out for y pred
+        x = x.view(-1, 2)          # (batch, 2) separate out for y pred
         if self.fc_train:
             fc = self.fchead(h[0],h[1])
             return x, fc
@@ -276,55 +246,3 @@ class pairScanWrapper(nn.Module):
         x,_ = self.backbone(x)      # main pairScan model - Captum hate
         x = x.view(-1)                # (B*2) - Captum love
         return x
-
-
-class quaidScan(nn.Module):
-    # DORMANT: A sum-difference model that I'm experimenting with, don't concern yourself with this for now
-    def __init__(self, poolsize, dropout):
-        super(quaidScan, self).__init__()
-        self.poolsize = poolsize
-        self.dropout = dropout
-        n = 32
-        n2 = 16
-        n_layers=2
-        attn_heads=4
-
-        self.seq_extractor = nn.Sequential(
-            nn.Conv1d(in_channels = 4, out_channels = n2, kernel_size = 15, stride = 1, dilation = 1, padding = 7),
-            nn.BatchNorm1d(n2,eps=1e-3),
-            nn.ReLU(),
-            
-            nn.Conv1d(in_channels = n2, out_channels = n, kernel_size = 11, stride = 1, dilation = 1, padding = 5),
-            nn.BatchNorm1d(n,eps=1e-3),
-            nn.ReLU())
-        
-        self.transformer_blocks = nn.TransformerEncoder(nn.TransformerEncoderLayer(d_model=n, nhead=attn_heads, dim_feedforward=n*4, dropout=self.dropout, batch_first=True), num_layers=n_layers)
-        
-        self.seq_extractor_2 = nn.Sequential(
-            nn.Conv1d(in_channels = n, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 2),
-            nn.BatchNorm1d(n2,eps=1e-3),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size = self.poolsize),  
-
-            nn.Conv1d(in_channels = n2, out_channels = n2, kernel_size = 5, stride = 1, dilation = 1, padding = 2),
-            nn.BatchNorm1d(n2,eps=1e-3),
-            nn.ReLU(),
-            nn.MaxPool1d(kernel_size = self.poolsize))
-        
-        self.fchead = fcblock(200)
-        self.sumhead = fcblock(200)
-    
-    def forward(self, x): # (batch, 2, 4, 300)
-        x = x.view(-1, x.shape[-2], x.shape[-1])     # (batch*2, 4, 300) stack b6 and cast 
-        x = self.seq_extractor(x)
-        x = x.permute(0,2,1)
-        for transformer in self.transformer_blocks:
-            x = transformer.forward(x, None)
-        x = x.permute(0,2,1)
-        x = self.seq_extractor_2(x)
-        x = torch.flatten(x,1)
-        h_diff = x.clone().view(2,-1,x.shape[-1])   # (2, batch, d)
-        h_sum = x.view(2,-1,x.shape[-1])
-        y_sum = self.sumhead(h_sum[0],h_sum[1]) 
-        y_fc = self.fchead(h_diff[0],h_diff[1])
-        return y_sum, y_fc

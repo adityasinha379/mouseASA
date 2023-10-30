@@ -3,6 +3,47 @@ import pandas as pd
 from sklearn.linear_model import LinearRegression
 from bisect import bisect
 from scipy.stats import zscore
+import torch
+DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+def mutagenize(x):
+    # mutagenesis at one base pair
+    # x (2, 4)      # b6 and cast nucleotides at a particular position
+    mut_x = torch.stack([x]*3)
+    acgt = np.array([[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]])
+    for j in range(len(x)):
+        mut_x[:,j,:] = torch.tensor(np.delete(acgt, np.where(x[j,:])[0], axis=0), dtype=x.dtype)
+    return mut_x      # (3,2,4)
+
+def ISM(x, model):
+    # x (2, 4, 300=seqlen)      paired b6 and cast input tensor
+    # Code to take a model and an input tensor, perform in-silico saturation mutagenesis and return score matrix
+    B = 16
+    seqlen = x.shape[-1]      # last dimension of input is seqlen
+    # Prepare batched input of ISM perturbations
+    x_aug = torch.stack([x]*(3*seqlen+1))                           # 1 for baseline, 3*seqlen for ISM (3*seqlen+1,2,4,300)
+    y_aug = np.zeros(x_aug.shape[:-2], dtype=np.float32)                # exclude one-hot and seqlen dims  (3*seqlen+1,2)
+
+    # Prepare ISM input
+    for i in range(seqlen):
+        x_aug[1+i*3:1+(i+1)*3,:,:,i] = mutagenize(x[:,:,i])
+    x_aug = x_aug.to(DEVICE)
+    
+    # Get outputs
+    for i in range(0, len(x_aug), B):    # (B,2,4,300)
+        temp = model(x_aug[i:i+B])[0]
+        y_aug[i:i+B] = temp.detach().cpu().numpy()    # (B,2)
+
+    # Get pred differences from baseline to calculate score matrix
+    temp = (y_aug[1:]-y_aug[0]).reshape(3,-1,2).transpose(2,0,1)     # (2, 3, seqlen)
+    # TODO: Do we need to normalize this???
+    # Now fill in the 0s at each position based on the original sequence x
+    scores = np.zeros((2, 4, seqlen), np.float32)       # define the scores matrix
+    for j in range(len(x)):
+        for i in range(seqlen):
+            scores[j, np.delete([0,1,2,3], np.where(x[j,:,i])[0][0]), i] = temp[j,:,i]
+    scores = np.round(scores, 2)
+    return scores         # (2, 3, 300)
 
 def trim_weights_dict(weights):
     '''
@@ -20,7 +61,7 @@ def trim_weights_dict(weights):
         del weights[k]
     return weights
 
-def get_neg_summits(chromsummits, num, chrom_length):
+def get_neg_summits(chromsummits, num, chrom_length, seed):
     '''
     Code to get "true" uneg summits for a  particular chromosome.
     This samples unegs uniformly from the background instead of from flanks of peaks and generally performs better when compared to taking flanks
@@ -31,7 +72,7 @@ def get_neg_summits(chromsummits, num, chrom_length):
     Output: neg_summits (num,)
     '''
     neg_summits = np.empty(0, dtype=np.int64)
-    rng = np.random.default_rng(seed=0)
+    rng = np.random.default_rng(seed=seed)
     while True:                # Trial and error, sample summits, take only 10kb separated ones, repeat till you have num samples
         temp = rng.choice(np.arange(5000000, chrom_length-5000000), num, replace=False)
         idx = np.where(np.array([np.min(np.abs(x- chromsummits)) for x in temp])>10000)[0]     # at least 10kb from summit

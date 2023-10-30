@@ -16,7 +16,7 @@ RANDOM_SEED = 0
 def load_data(celltype, dataset, ident, get_rc=True, frac=0.6):
     basedir = '/data/leslie/shared/ASA/mouseASA/'
     datadir = basedir+'/'+celltype+'/data/'
-    # alleleScan can train on all the datasets
+    
     if dataset=='trueref' or dataset=='ref':
         with h5py.File(datadir+'data'+ident+'_'+dataset+'.h5','r') as f:
             uneg_idx = subsample_unegs([len(f['x_train_unegs'][()]), len(f['x_val_unegs'][()])], frac=frac)
@@ -140,7 +140,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     valid_losses = []
     counter = 0
 
-    # torch.autograd.set_detect_anomaly(True)     # for debugging purposes, really slow
+    # torch.autograd.set_detect_anomaly(True)
     for epoch_i in range(num_epochs):
         counter += 1
         model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     basedir = '/data/leslie/shared/ASA/mouseASA/'
     if use_prior:
         #fourier param
-        freq_limit = 50         # This should be seqlen//6 (seqlen is 300 for me)
+        freq_limit = 50
         limit_softness = 0.2
         att_prior_grad_smooth_sigma = 3
     else:
@@ -226,7 +226,7 @@ if __name__ == "__main__":
     loss_fcn = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
 
-    x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.6)  # NOTE: for valid comparison, uneg sampling fraction should be double for alleleScan
+    x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.6)
     
     ## define the data loaders
     train_dataset = Dataset(x_train, y_train)
@@ -246,10 +246,12 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    SAVEPATH = basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)    # model save path
+    name = 'bajra'
+    # SAVEPATH = basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
+    SAVEPATH = basedir+f'{celltype}/ckpt_models/{name}.hdf5'
     print(SAVEPATH)
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
-    model.load_state_dict(torch.load(SAVEPATH))      # load best model (NOT last epoch)
+    model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
@@ -257,4 +259,5 @@ if __name__ == "__main__":
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    np.save(predsdir+'{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)      # preds save path
+    # np.save(predsdir+'{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
+    np.save(f'{predsdir}{name}.npy', test_preds)
