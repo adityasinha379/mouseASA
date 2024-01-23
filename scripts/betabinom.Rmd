@@ -1,0 +1,111 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(VGAM)
+library(bbmle)
+library(parallel)
+```
+
+```{r}
+y_ca <- read.csv('./forBetaBinom_ca_only_noGC_noMerge_vi_raw_150bp.csv', row.names = 1)
+y_b6 <- read.csv('./forBetaBinom_b6_only_noGC_noMerge_vi_raw_150bp.csv', row.names = 1)
+```
+```{r}
+y_ca <- t(y_ca)
+y_b6 <- t(y_b6)
+
+```
+
+```{r}
+peak_id <- read.csv('./forBetaBinom_peakID_only_noGC_noMerge_vi_raw_150bp.csv', row.names = 1)
+```
+
+```{r}
+# mle.custom.h0 <- function( ref, alt, debug = F ){
+#     x <- alt
+#     size <- ref + alt
+# 
+#     bbll <- function( prob=0.5, rho = 0.1 ){
+#         if( ( rho > 0 ) & ( rho < 1 ) )
+#             -sum( dbetabinom( x, size, prob, rho, log = T ) )
+#         else -log(1e-10)
+#     }
+# 
+#     fit <- mle2( bbll, # nobs = length(x), 
+#                # start = list( shape1 = 10, shape2 = 5 ),
+#                #start = list(rho = 0.5 ), 
+#                fixed = list( prob = 0.5 ),
+#                #skip.hessian = T,
+#                #method = "Brent", # hessian = FALSE, 
+#                control = list( maxit = 1e3, trace = as.integer(debug), ndeps = 1e-4 ) 
+#                ) 
+#     return( fit )
+# }
+mle.custom.h0 <- function( ref, alt, rho, debug = F ){
+    x <- alt
+    size <- ref + alt
+    fit <- -sum( dbetabinom( x, size, 0.5, rho, log = T ) 
+               ) 
+    return( fit )
+}
+mle.custom.h1 <- function( ref, alt, debug = F ){
+    x <- alt
+    size <- ref + alt
+
+    bbll <- function( prob, rho ){
+        if( ( prob > 0 ) & ( rho > 0 ) & ( prob < 1 ) & ( rho < 1 ) )
+            -sum( dbetabinom( x, size, prob, rho, log = T ) )
+        else NA 
+    }
+
+    fit <- mle2( bbll, # nobs = length(x), 
+               # start = list( shape1 = 10, shape2 = 5 ),
+               start = list( prob = 0.1, rho = 0.5 ),
+               method = "Nelder-Mead", # hessian = FALSE,
+               skip.hessian = T,
+               control = list( maxit = 1e3, trace = as.integer(debug) ,ndeps = 1e-4 ) ) 
+    return( fit )
+}
+
+```
+
+```{r}
+mle.res <- mclapply( 1:nrow(y_b6), function( i ){ 
+       ref <- y_b6[i,]
+       alt <- y_ca[i,]
+       fit1 <- mle.custom.h1(ceiling(ref), ceiling(alt) )
+       fit0 <- mle.custom.h0(ceiling(ref), ceiling(alt) , fit1@coef['rho'])
+       return(c(fit1@min, fit0))
+}, mc.cores = 48 )
+#mle.res <- data.frame( do.call( 'rbind', lrt.res ) )
+```
+
+```{r}
+df.stats <- data.frame(rowMeans(y_b6),rowMeans(y_ca),unlist(mle.res)[seq(1,length(mle.res)*2, 2)],unlist(mle.res)[seq(2,length(mle.res)*2, 2)])
+colnames(df.stats) <- c('rowMeans.y_b6', 'rowMeans.y_ca', 'mle_nll', 'n0_nll')
+```
+
+```{r}
+p.value <- lapply(1:nrow(df.stats), function(i){
+  pchisq( 2 *( df.stats$n0_nll[i] - df.stats$mle_nll[i] ), 1, lower.tail=F )
+})
+```
+
+```{r}
+df.stats$pval <- unlist(p.value)
+df.stats$p.adj <- p.adjust( df.stats$pval, 'BH' )
+```
+
+```{r}
+df.stats$peak_id <- peak_id$X0
+```
+
+
+```{r}
+write.csv(df.stats, './betabinom_res_combined_counts_150bp.csv')
+#write.csv(df.stats, './betabinom_res_specific_counts.csv')
+```
+

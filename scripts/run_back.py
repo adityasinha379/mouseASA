@@ -15,7 +15,7 @@ RANDOM_SEED = 0
 
 def load_data(celltype, dataset, ident, get_rc=True, frac=0.6):
     basedir = '/data/leslie/shared/ASA/mouseASA/'
-    datadir = basedir+'/'+celltype+'/data/'
+    datadir = basedir+celltype+'/cast/data/'
     
     if dataset=='trueref' or dataset=='ref':
         with h5py.File(datadir+'data'+ident+'_'+dataset+'.h5','r') as f:
@@ -68,14 +68,15 @@ class Dataset(torch.utils.data.Dataset):
 
 def validate(data_loader, model, loss_fcn):
     model.eval()  # Switch to evaluation mode
-    losses = []
-    for input_seqs, output_vals in data_loader:
-        input_seqs = input_seqs.to(DEVICE)
-        output_vals = output_vals.to(DEVICE)
+    with torch.no_grad():
+        losses = []
+        for input_seqs, output_vals in data_loader:
+            input_seqs = input_seqs.to(DEVICE)
+            output_vals = output_vals.to(DEVICE)
 
-        logit_pred_vals = model(input_seqs)
-        loss = loss_fcn(logit_pred_vals, output_vals)
-        losses.append(loss.item())
+            logit_pred_vals = model(input_seqs)
+            loss = loss_fcn(logit_pred_vals, output_vals)
+            losses.append(loss.item())
     return model, losses
 
 def test(data_loader, model):
@@ -95,10 +96,9 @@ def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
     losses = []
 
     for input_seqs, output_vals in data_loader:
-        optimizer.zero_grad()
         input_seqs = input_seqs.to(DEVICE)
         output_vals = output_vals.to(DEVICE)
-        # Clear gradients from last batch if training
+        optimizer.zero_grad()
 
         if use_prior:
             input_seqs.requires_grad = True  # Set gradient required
@@ -140,7 +140,6 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     valid_losses = []
     counter = 0
 
-    # torch.autograd.set_detect_anomaly(True)
     for epoch_i in range(num_epochs):
         counter += 1
         model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
@@ -154,10 +153,9 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
             train_loss_mean = np.mean(losses)
             train_losses.append(train_loss_mean)
         
-        with torch.no_grad():
-            _, losses = validate(valid_loader, model, loss_fcn)
-            valid_loss_mean = np.mean(losses)
-            valid_losses.append(valid_loss_mean)
+        _, losses = validate(valid_loader, model, loss_fcn)
+        valid_loss_mean = np.mean(losses)
+        valid_losses.append(valid_loss_mean)
             
         if valid_loss_mean < best_loss:
             counter = 0
@@ -188,7 +186,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
 
 if __name__ == "__main__":
     initial_rate = 1e-3
-    wd = 1e-3
+    wd = 1e-2
     N_EPOCHS = 100
     patience = 10
 
@@ -204,10 +202,10 @@ if __name__ == "__main__":
         weight = 1.0
 
     gc = ''
-    ident = '_vi_150bp'
+    ident = '_vi_150bp_aug'
     modelname = 'm3'
 
-    basedir = '/data/leslie/shared/ASA/mouseASA/'
+    basedir = f'/data/leslie/shared/ASA/mouseASA/{celltype}/cast'
     if use_prior:
         #fourier param
         freq_limit = 50
@@ -222,9 +220,10 @@ if __name__ == "__main__":
     if modelname=='m3':
         model = alleleScan(poolsize, dropout)
     model.to(DEVICE)
+    print(sum([p.numel() for p in model.parameters()]))
 
     loss_fcn = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=initial_rate, weight_decay=wd)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=initial_rate, weight_decay=wd)
 
     x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.6)
     
@@ -246,18 +245,17 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    name = 'bajra'
-    # SAVEPATH = basedir+'{}/ckpt_models/{}_{}_{}_{}{}{}.hdf5'.format(celltype, modelname, dataset, use_prior, BATCH_SIZE, gc, ident)
-    SAVEPATH = basedir+f'{celltype}/ckpt_models/{name}.hdf5'
+    if not os.path.exists(f'{basedir}/ckpt_models/'):
+        os.makedirs(f'{basedir}/ckpt_models/')
+    SAVEPATH = f'{basedir}/ckpt_models/{modelname}_{dataset}_{BATCH_SIZE}_{weight}{gc}{ident}.hdf5'
     print(SAVEPATH)
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
     test_preds = test(test_loader, model)     # averaged over revcomps
-    predsdir = basedir+f'{celltype}/preds/'
+    predsdir = f'{basedir}/preds/'
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    # np.save(predsdir+'{}_{}_{}_{}{}{}.npy'.format(modelname, dataset, use_prior, BATCH_SIZE, gc, ident), test_preds)
-    np.save(f'{predsdir}{name}.npy', test_preds)
+    np.save(f'{predsdir}/{modelname}_{dataset}_{BATCH_SIZE}_{weight}{gc}{ident}.npy', test_preds)

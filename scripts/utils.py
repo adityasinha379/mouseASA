@@ -133,6 +133,9 @@ def get_summits(peaks):
     
     summits_neg = pd.concat( (summits_neg,summits_neg1), ignore_index=True)
     summits_neg = summits_neg.sort_values(by=[0,1], ignore_index=True)
+    rng = np.random.default_rng(seed=0)
+    idx = rng.choice(np.arange(len(summits_neg)), len(summits_neg)//2, replace=False)
+    summits_neg = summits_neg.iloc[idx, :].reset_index(drop=True)
     return summits, summits_neg
 
 def get_shifts(chromsummits, mods, c):

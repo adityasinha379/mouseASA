@@ -67,14 +67,13 @@ class Dataset(torch.utils.data.Dataset):
         'Initialization'
         self.x = x.swapaxes(2,3)  # (batch, 2, 4, 300)
         self.y = y
-        self.fc = y[:,1] - y[:,0]
         
     def __len__(self):
         'Denotes the total number of samples'
         return self.x.shape[0]
 
     def __getitem__(self, index):
-        return self.x[index].astype(np.float32), self.y[index].astype(np.float32), self.fc[index].astype(np.float32)
+        return self.x[index].astype(np.float32), self.y[index].astype(np.float32)
 
 
 def test(data_loader, model):
@@ -92,15 +91,15 @@ def test(data_loader, model):
 
 def validate(data_loader, model, loss_fcn):
     model.eval()  # Switch to evaluation mode
-    losses = []
-    for input_seqs, output_vals, fc in data_loader:
-        input_seqs = input_seqs.to(DEVICE)
-        output_vals = output_vals.to(DEVICE)
-        fc = fc.to(DEVICE)
+    with torch.no_grad():
+        losses = []
+        for input_seqs, output_vals, fc in data_loader:
+            input_seqs = input_seqs.to(DEVICE)
+            output_vals = output_vals.to(DEVICE)
 
-        logit_pred_vals = model(input_seqs)
-        loss = loss_fcn(logit_pred_vals, output_vals)
-        losses.append(loss.item())
+            logit_pred_vals = model(input_seqs)
+            loss = loss_fcn(logit_pred_vals, output_vals)
+            losses.append(loss.item())
     return model, losses
 
 def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
@@ -112,8 +111,7 @@ def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
         optimizer.zero_grad()
         input_seqs = input_seqs.to(DEVICE)
         output_vals = output_vals.to(DEVICE)
-        fc = fc.to(DEVICE)
-        # Clear gradients from last batch if training
+        
         if use_prior:
             input_seqs.requires_grad = True  # Set gradient required
             logit_pred_vals = model(input_seqs)
@@ -151,11 +149,12 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     train_losses = []
     valid_losses = []
     counter = 0
+    # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.9)
 
     for epoch_i in range(num_epochs):
         counter += 1
         model, optimizer, losses = train(train_loader, model, optimizer, loss_fcn, use_prior, weight)
-        
+        # scheduler.step()
         if use_prior:
             fourier_losses = [x[1] for x in losses]
             losses = [x[0] for x in losses]
@@ -166,10 +165,10 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
             train_loss_mean = np.mean(losses)
             train_losses.append(train_loss_mean)
         
-        with torch.no_grad():
-            _, losses = validate(valid_loader, model, loss_fcn)
-            valid_loss_mean = np.mean(losses)
-            valid_losses.append(valid_loss_mean)
+        # Run validation step
+        _, losses = validate(valid_loader, model, loss_fcn)
+        valid_loss_mean = np.mean(losses)
+        valid_losses.append(valid_loss_mean)
             
         if valid_loss_mean < best_loss:
             counter = 0
@@ -232,6 +231,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.deterministic=True
     if modelname=='ad':
         model = pairScan(poolsize, dropout, fc_train=False)    # change to True for fc training
+        BATCH_SIZE//=2                 # paired input
     model.to(DEVICE)
     print(sum([p.numel() for p in model.parameters()]))
 
@@ -241,8 +241,8 @@ if __name__ == "__main__":
     x_train, x_valid, x_test, y_train, y_valid, y_test = load_data(celltype, dataset, gc+ident, frac=0.3)
 
     ## define the data loaders
-    train_dataset = Dataset(x_train, y_train) #, get_confweights(dataset='train'))
-    val_dataset = Dataset(x_valid, y_valid) #, get_confweights(dataset='val'))
+    train_dataset = Dataset(x_train, y_train)
+    val_dataset = Dataset(x_valid, y_valid)
     test_dataset = Dataset(x_test, y_test)
 
     train_loader = DataLoader(dataset=train_dataset, 
@@ -258,11 +258,10 @@ if __name__ == "__main__":
                             shuffle=False,
                         num_workers = 1)
     
-    name = 'test_both_1'
-    # SAVEPATH =  f'{basedir}/ckpt_models/{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}_{gc}{ident}_fc.hdf5'
-    SAVEPATH = f'{basedir}/ckpt_models/{name}.hdf5'
-    # print(SAVEPATH)
-    # model.load_state_dict(torch.load(SAVEPATH))
+    if not os.path.exists(f'{basedir}/ckpt_models/'):
+        os.makedirs(f'{basedir}/ckpt_models/')
+    SAVEPATH =  f'{basedir}/ckpt_models/{modelname}_{dataset}_{BATCH_SIZE*2}_{weight}{gc}{ident}.hdf5'       # x2 because of paired input
+    print(SAVEPATH)
     model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
     
@@ -272,5 +271,4 @@ if __name__ == "__main__":
     print(test_preds.shape,'\n')
     if not os.path.exists(predsdir):
         os.makedirs(predsdir)
-    # np.save(f'{predsdir}/{modelname}_{dataset}_{use_prior}_{BATCH_SIZE}_{gc}{ident}_fc.npy', test_preds)
-    np.save(f'{predsdir}{name}.npy', test_preds)
+    np.save(f'{predsdir}/{modelname}_{dataset}_{BATCH_SIZE*2}_{weight}{gc}{ident}.npy', test_preds)       # x2 because of paired input
