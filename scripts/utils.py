@@ -4,6 +4,8 @@ from sklearn.linear_model import LinearRegression
 from bisect import bisect
 from scipy.stats import zscore
 import torch
+from sklearn.metrics import precision_recall_curve, roc_curve, auc
+
 DEVICE = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 def mutagenize(x):
@@ -256,3 +258,18 @@ def load_oldcounts():
     xVa, yVa = revcomp_m3(xVa, yVa)
     xTe, yTe = revcomp_m3(xTe, yTe)
     return xTr, xVa, xTe, yTr, yVa, yTe
+
+def plot_auc(x,y,name,ax):
+    if name=='roc':
+        roc = roc_curve(x,y)
+        ax.plot(roc[0],roc[1])
+        ax.set_ylabel('TPR')
+        ax.set_xlabel('FPR')
+        ax.text(0.2, 0.9, 'AUC = {:.3f}'.format(auc(roc[0],roc[1])), ha='center', va='bottom',fontsize=12)
+    elif name=='prc':
+        prc = precision_recall_curve(x,y)
+        ax.plot(prc[1],prc[0])
+        ax.set_ylabel('Precision')
+        ax.set_xlabel('Recall')
+        ax.text(0.8, 0.9, 'AUPRC = {:.3f}'.format(auc(prc[1],prc[0])), ha='center', va='bottom',fontsize=12)
+    return
