@@ -30,7 +30,7 @@ def test(data_loader, model):
     model.eval()
     with torch.no_grad():
         preds = []
-        for input_seqs,_,_ in data_loader:
+        for input_seqs,_ in data_loader:
             input_seqs = input_seqs.to(DEVICE)
             logit_pred_vals = model(input_seqs)
             preds.append(logit_pred_vals.detach().cpu().numpy())
@@ -43,7 +43,7 @@ def validate(data_loader, model, loss_fcn):
     model.eval()  # Switch to evaluation mode
     with torch.no_grad():
         losses = []
-        for input_seqs, output_vals, fc in data_loader:
+        for input_seqs, output_vals in data_loader:
             input_seqs = input_seqs.to(DEVICE)
             output_vals = output_vals.to(DEVICE)
 
@@ -56,7 +56,7 @@ def train(data_loader, model, optimizer, loss_fcn, use_prior, weight=1.0):
     model.train()  # Switch to training mode
     losses = []
     cnt=0
-    for input_seqs, output_vals, fc in data_loader:
+    for input_seqs, output_vals in data_loader:
         cnt+=1
         optimizer.zero_grad()
         input_seqs = input_seqs.to(DEVICE)
@@ -99,6 +99,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     train_losses = []
     valid_losses = []
     counter = 0
+    min_epochs = 30
     # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=optimizer, gamma=0.9)
 
     for epoch_i in range(num_epochs):
@@ -140,7 +141,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
                 f'Train loss: {train_loss_mean:.4f}\t'
                 f'Valid loss: {valid_loss_mean:.4f}\t'
             )
-        if counter >= patience:
+        if counter >= patience and epoch_i>=min_epochs:
             print('Val loss did not improve for {} epochs, early stopping...'.format(patience))
             break
     
@@ -165,7 +166,7 @@ if __name__ == "__main__":
         weight = 1.0
     
     gc = ''
-    ident = '_vi_150bp_aug'
+    ident = '_vi_150bp_tn5_aug'
     modelname = 'ad'
 
     basedir = f'/data/leslie/shared/ASA/mouseASA/{celltype}/cast'
@@ -181,7 +182,7 @@ if __name__ == "__main__":
     torch.manual_seed(RANDOM_SEED)
     torch.backends.cudnn.deterministic=True
     if modelname=='ad':
-        model = pairScan(poolsize, dropout, fc_train=False)    # change to True for fc training
+        model = pairScan(poolsize, dropout)    # change to True for fc training
         BATCH_SIZE//=2                 # paired input
     model.to(DEVICE)
     print(sum([p.numel() for p in model.parameters()]))
@@ -213,7 +214,7 @@ if __name__ == "__main__":
         os.makedirs(f'{basedir}/ckpt_models/')
     SAVEPATH =  f'{basedir}/ckpt_models/{modelname}_{dataset}_{BATCH_SIZE*2}_{weight}{gc}{ident}.hdf5'       # x2 because of paired input
     print(SAVEPATH)
-    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
+    # model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
