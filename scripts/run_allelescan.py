@@ -99,6 +99,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
     train_losses = []
     valid_losses = []
     counter = 0
+    min_epochs = 30
 
     for epoch_i in range(num_epochs):
         counter += 1
@@ -137,7 +138,7 @@ def train_model(model, train_loader, valid_loader, num_epochs, optimizer, loss_f
                 f'Train loss: {train_loss_mean:.4f}\t'
                 f'Valid loss: {valid_loss_mean:.4f}\t'
             )
-        if counter >= patience:
+        if counter >= patience and epoch_i>=min_epochs:
             print('Val loss did not improve for {} epochs, early stopping...'.format(patience))
             break
 
@@ -162,7 +163,7 @@ if __name__ == "__main__":
         weight = 1.0
 
     gc = ''
-    ident = '_vi_150bp_aug'
+    ident = '_vi_150bp_tn5_aug'
     modelname = 'm3'
 
     basedir = f'/data/leslie/shared/ASA/mouseASA/{celltype}/cast'
@@ -209,7 +210,7 @@ if __name__ == "__main__":
         os.makedirs(f'{basedir}/ckpt_models/')
     SAVEPATH = f'{basedir}/ckpt_models/{modelname}_{dataset}_{BATCH_SIZE}_{weight}{gc}{ident}.hdf5'
     print(SAVEPATH)
-    model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
+    # model, train_losses, val_losses = train_model(model, train_loader, val_loader, N_EPOCHS, optimizer, loss_fcn, SAVEPATH, patience, use_prior=bool(use_prior), weight=weight)
     model.load_state_dict(torch.load(SAVEPATH))
     
     # run testing with the trained model
